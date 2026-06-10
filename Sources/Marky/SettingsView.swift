@@ -6,11 +6,14 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject var settings: AppSettings
     @ObservedObject var permissions: AccessibilityPermissionManager
+    @ObservedObject var history: ClipboardHistoryStore
 
     var body: some View {
         TabView {
             GeneralPane(settings: self.settings, permissions: self.permissions)
                 .tabItem { Label("General", systemImage: "gearshape") }
+            HistoryPane(settings: self.settings, history: self.history)
+                .tabItem { Label("History", systemImage: "clock.arrow.circlepath") }
             ShortcutsPane()
                 .tabItem { Label("Shortcuts", systemImage: "keyboard") }
             AboutPane()
@@ -18,6 +21,47 @@ struct SettingsView: View {
         }
         .frame(width: 440)
         .padding()
+    }
+}
+
+private struct HistoryPane: View {
+    @ObservedObject var settings: AppSettings
+    @ObservedObject var history: ClipboardHistoryStore
+
+    var body: some View {
+        Form {
+            Toggle("Keep clipboard history", isOn: self.$settings.historyEnabled)
+            Text("Records text and images you copy. Click an entry in the menu to copy it back.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Divider()
+
+            Stepper(
+                "Remember \(self.settings.historyRememberLimit) clippings",
+                value: self.$settings.historyRememberLimit,
+                in: 5...500,
+                step: 5)
+            Stepper(
+                "Display \(self.settings.historyDisplayLimit) in menu",
+                value: self.$settings.historyDisplayLimit,
+                in: 5...50,
+                step: 5)
+
+            Divider()
+
+            LabeledContent("Stored clippings") {
+                Text("\(self.history.entries.count)")
+            }
+            Button("Clear History", role: .destructive) {
+                self.history.clear()
+            }
+
+            Text("Content marked confidential by password managers is never recorded.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 8)
     }
 }
 
@@ -30,15 +74,7 @@ private struct GeneralPane: View {
     var body: some View {
         Form {
             Toggle("Auto-convert Markdown on copy", isOn: self.$settings.autoConvertEnabled)
-
-            Picker("Detection sensitivity", selection: self.$settings.sensitivity) {
-                ForEach(Sensitivity.allCases, id: \.self) { level in
-                    Text(level.displayName).tag(level)
-                }
-            }
-            .pickerStyle(.segmented)
-
-            Text(self.sensitivityHelp)
+            Text("Converts copied text when it clearly looks like Markdown. Shell commands, source code, and bare URLs are left alone.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
@@ -56,31 +92,41 @@ private struct GeneralPane: View {
 
             Divider()
 
-            LabeledContent("Accessibility") {
-                if self.permissions.isTrusted {
-                    Label("Granted", systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
-                } else {
-                    Button("Grant…") {
-                        self.permissions.requestIfNeeded()
-                        self.permissions.openSystemSettings()
-                    }
-                }
-            }
-            Text("Required only for the paste hotkeys (synthetic ⌘V). Clipboard conversion works without it.")
+            Toggle("Paste automatically after hotkeys", isOn: self.$settings.autoPasteEnabled)
+            Text(
+                """
+                Off: hotkeys only rewrite the clipboard — you paste with ⌘V. \
+                On: Marky also sends ⌘V to the frontmost app (requires Accessibility).
+                """)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+            if self.settings.autoPasteEnabled {
+                LabeledContent("Accessibility") {
+                    if self.permissions.isTrusted {
+                        Label("Granted", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    } else {
+                        Button("Grant…") {
+                            self.permissions.requestIfNeeded()
+                            self.permissions.openSystemSettings()
+                        }
+                    }
+                }
+                if !self.permissions.isTrusted {
+                    Text(
+                        """
+                        Note: rebuilding Marky invalidates this permission (ad-hoc code signature). \
+                        Remove and re-add Marky in System Settings → Privacy & Security → Accessibility \
+                        after each rebuild.
+                        """)
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+            }
         }
         .padding(.vertical, 8)
         .onAppear { self.permissions.refresh() }
-    }
-
-    private var sensitivityHelp: String {
-        switch self.settings.sensitivity {
-        case .low: "Low: converts only clearly formatted Markdown (multiple strong cues)."
-        case .normal: "Normal: converts typical Markdown like headings with lists or emphasis."
-        case .high: "High: converts almost anything Markdown-shaped, even a lone heading."
-        }
     }
 
     private func updateLaunchAtLogin(_ enable: Bool) {
@@ -101,9 +147,14 @@ private struct GeneralPane: View {
 private struct ShortcutsPane: View {
     var body: some View {
         Form {
-            KeyboardShortcuts.Recorder("Paste as Rich Text:", name: .pasteRichText)
-            KeyboardShortcuts.Recorder("Paste Original Markdown:", name: .pasteOriginal)
-            Text("Both shortcuts convert/restore the clipboard and then paste into the frontmost app.")
+            KeyboardShortcuts.Recorder("Convert to Rich Text:", name: .convertToRichText)
+            KeyboardShortcuts.Recorder("Restore Original Markdown:", name: .restoreOriginal)
+            KeyboardShortcuts.Recorder("Copy as Plain Text:", name: .copyPlainText)
+            Text(
+                """
+                Shortcuts rewrite the clipboard (and show up in History); paste with ⌘V. \
+                Enable "Paste automatically" in General to also paste in one step.
+                """)
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

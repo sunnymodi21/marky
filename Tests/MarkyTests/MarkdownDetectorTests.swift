@@ -13,16 +13,14 @@ import Testing
         - Fixed [the bug](https://example.com)
         - Added tests
         """
-        #expect(self.detector.isMarkdown(text, config: ConvertConfig(sensitivity: .low)))
-        #expect(self.detector.isMarkdown(text, config: ConvertConfig(sensitivity: .normal)))
-        #expect(self.detector.isMarkdown(text, config: ConvertConfig(sensitivity: .high)))
+        #expect(self.detector.isMarkdown(text))
     }
 
-    @Test func detectsHeadingOnlyAtHighSensitivity() {
+    @Test func headingAloneIsNotEnough() {
+        // A lone heading scores below the fixed threshold; avoids false positives
+        // on shell comments and prose starting with '#'.
         let text = "# Release notes\nsome plain text below"
-        #expect(self.detector.isMarkdown(text, config: ConvertConfig(sensitivity: .high)))
-        #expect(!self.detector.isMarkdown(text, config: ConvertConfig(sensitivity: .normal)))
-        #expect(!self.detector.isMarkdown(text, config: ConvertConfig(sensitivity: .low)))
+        #expect(!self.detector.isMarkdown(text))
     }
 
     @Test func detectsTable() {
@@ -32,7 +30,7 @@ import Testing
         | a    | 1     |
         | b    | 2     |
         """
-        #expect(self.detector.isMarkdown(text, config: ConvertConfig(sensitivity: .normal)))
+        #expect(self.detector.isMarkdown(text))
     }
 
     @Test func detectsFencedCodeWithProse() {
@@ -45,7 +43,7 @@ import Testing
 
         Then **verify** the output.
         """
-        #expect(self.detector.isMarkdown(text, config: ConvertConfig(sensitivity: .normal)))
+        #expect(self.detector.isMarkdown(text))
     }
 
     @Test func rejectsPlainProse() {
@@ -53,7 +51,7 @@ import Testing
         Hello team, just a quick note that the meeting moved to 3pm.
         Please update your calendars accordingly. Thanks!
         """
-        #expect(!self.detector.isMarkdown(text, config: ConvertConfig(sensitivity: .high)))
+        #expect(!self.detector.isMarkdown(text))
     }
 
     @Test func rejectsShellCommands() {

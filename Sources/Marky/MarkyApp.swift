@@ -9,6 +9,7 @@ struct MarkyApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var settings: AppSettings
     @StateObject private var permissions: AccessibilityPermissionManager
+    @StateObject private var history: ClipboardHistoryStore
     @StateObject private var monitor: ClipboardMonitor
     @StateObject private var hotkeys: HotkeyManager
     @State private var isMenuPresented = false
@@ -17,11 +18,13 @@ struct MarkyApp: App {
     init() {
         let settings = AppSettings()
         let permissions = AccessibilityPermissionManager()
-        let monitor = ClipboardMonitor(settings: settings)
+        let history = ClipboardHistoryStore(settings: settings)
+        let monitor = ClipboardMonitor(settings: settings, history: history)
         monitor.start()
         let hotkeys = HotkeyManager(settings: settings, monitor: monitor, permissions: permissions)
         _settings = StateObject(wrappedValue: settings)
         _permissions = StateObject(wrappedValue: permissions)
+        _history = StateObject(wrappedValue: history)
         _monitor = StateObject(wrappedValue: monitor)
         _hotkeys = StateObject(wrappedValue: hotkeys)
     }
@@ -32,17 +35,21 @@ struct MarkyApp: App {
                 settings: self.settings,
                 monitor: self.monitor,
                 permissions: self.permissions,
-                hotkeys: self.hotkeys)
-            Divider()
-            Button("Quit Marky") { NSApplication.shared.terminate(nil) }
-                .keyboardShortcut("q", modifiers: .command)
+                history: self.history,
+                hotkeys: self.hotkeys,
+                isPresented: self.$isMenuPresented)
         } label: {
             StatusLabel(isEnabled: self.settings.autoConvertEnabled)
         }
+        // menuBarExtraAccess must come directly after MenuBarExtra (it extends
+        // that scene type, not `some Scene`).
         .menuBarExtraAccess(isPresented: self.$isMenuPresented) { item in
             self.statusItem = item
             self.applyStatusItemAppearance()
         }
+        // Window style so the panel can host a live search field
+        // (native .menu style menus can't contain text input).
+        .menuBarExtraStyle(.window)
         .onChange(of: self.settings.autoConvertEnabled) { _, _ in
             self.applyStatusItemAppearance()
         }
@@ -51,7 +58,7 @@ struct MarkyApp: App {
         }
 
         Settings {
-            SettingsView(settings: self.settings, permissions: self.permissions)
+            SettingsView(settings: self.settings, permissions: self.permissions, history: self.history)
         }
         .windowResizability(.contentSize)
     }

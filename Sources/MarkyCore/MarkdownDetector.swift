@@ -3,7 +3,7 @@ import Foundation
 /// Score-based Markdown detection.
 ///
 /// Positive cues add to a score; negative gates reject outright (shell commands,
-/// source code, bare URLs). The score is compared against the sensitivity threshold.
+/// source code, bare URLs). The score is compared against the config's threshold.
 public struct MarkdownDetector: Sendable {
     private static let knownCommandPrefixes: [String] = [
         "sudo", "./", "~/", "apt", "brew", "git", "python", "pip", "pnpm", "npm", "yarn", "cargo",
@@ -16,7 +16,7 @@ public struct MarkdownDetector: Sendable {
     public init() {}
 
     public func isMarkdown(_ text: String, config: ConvertConfig = ConvertConfig()) -> Bool {
-        self.score(text, config: config) >= config.sensitivity.scoreThreshold
+        self.score(text, config: config) >= config.scoreThreshold
     }
 
     /// Returns 0 when a negative gate rejects the text outright.

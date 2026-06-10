@@ -14,6 +14,7 @@ final class ClipboardMonitor: ObservableObject {
 
     private let settings: AppSettings
     private let pasteboard: NSPasteboard
+    private let history: ClipboardHistoryStore?
     private let converter = MarkdownConverter()
     private let detector = MarkdownDetector()
 
@@ -27,23 +28,13 @@ final class ClipboardMonitor: ObservableObject {
 
     @Published private(set) var lastSummary: String = ""
     @Published private(set) var convertPulseID: Int = 0
-    @Published private(set) var frontmostAppName: String = "current app"
     private(set) var lastConversion: ConversionResult?
 
-    init(settings: AppSettings, pasteboard: NSPasteboard = .general) {
+    init(settings: AppSettings, pasteboard: NSPasteboard = .general, history: ClipboardHistoryStore? = nil) {
         self.settings = settings
         self.pasteboard = pasteboard
+        self.history = history
         self.lastSeenChangeCount = pasteboard.changeCount
-        self.updateFrontmostAppName(NSWorkspace.shared.frontmostApplication)
-        NSWorkspace.shared.notificationCenter.addObserver(
-            self,
-            selector: #selector(self.handleAppActivation(_:)),
-            name: NSWorkspace.didActivateApplicationNotification,
-            object: nil)
-    }
-
-    deinit {
-        NSWorkspace.shared.notificationCenter.removeObserver(self)
     }
 
     // MARK: - Polling
@@ -78,6 +69,7 @@ final class ClipboardMonitor: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + self.graceDelay) { [weak self] in
             guard let self else { return }
             guard observed == self.pasteboard.changeCount else { return }
+            self.captureClipboardForHistory()
             self.convertClipboardIfNeeded(force: false)
         }
     }
@@ -94,6 +86,7 @@ final class ClipboardMonitor: ObservableObject {
 
         let alreadyConverted = self.hasMarker
         if alreadyConverted, !force { return false }
+        if self.isSensitiveContent, !force { return false }
 
         guard let markdown = self.clipboardMarkdown(),
               !markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -115,10 +108,45 @@ final class ClipboardMonitor: ObservableObject {
         return true
     }
 
+    // MARK: - History capture
+
+    /// Records the current clipboard (text or image) into the history.
+    /// Skips our own writes and concealed/transient content (password managers).
+    func captureClipboardForHistory() {
+        guard let history = self.history, self.settings.historyEnabled else { return }
+        guard !self.hasMarker, !self.isSensitiveContent else { return }
+
+        if let text = self.clipboardMarkdown() {
+            history.recordText(text)
+        } else if let pngData = self.readImagePNG() {
+            history.recordImage(pngData: pngData)
+        }
+    }
+
+    /// PNG data for an image on the pasteboard (converts TIFF, e.g. screenshots/Preview copies).
+    func readImagePNG() -> Data? {
+        if let png = self.pasteboard.data(forType: .png) { return png }
+        if let tiff = self.pasteboard.data(forType: .tiff),
+           let rep = NSBitmapImageRep(data: tiff),
+           let png = rep.representation(using: .png, properties: [:])
+        {
+            return png
+        }
+        return nil
+    }
+
     // MARK: - Pasteboard IO
 
     var hasMarker: Bool {
         self.pasteboard.types?.contains(Self.markerType) == true
+    }
+
+    /// Standard nspasteboard.org types used by password managers and ephemeral copies.
+    var isSensitiveContent: Bool {
+        let concealed = NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")
+        let transient = NSPasteboard.PasteboardType("org.nspasteboard.TransientType")
+        let types = self.pasteboard.types ?? []
+        return types.contains(concealed) || types.contains(transient)
     }
 
     /// Plain text from the pasteboard (the original markdown, even after our own write).
@@ -142,13 +170,43 @@ final class ClipboardMonitor: ObservableObject {
 
     /// Writes markdown as plain text only (still marked so we don't reconvert it).
     func writePlainMarkdown(_ markdown: String) {
+        self.writePlainText(markdown, summary: "Restored original Markdown to clipboard.")
+    }
+
+    /// Writes text as the only representation, stripping any rich formatting.
+    /// The marker prevents the monitor from re-detecting/converting it.
+    func writePlainText(_ text: String, summary: String) {
+        self.lastSummary = summary
         let item = NSPasteboardItem()
-        item.setString(markdown, forType: .string)
+        item.setString(text, forType: .string)
         item.setData(Data(), forType: Self.markerType)
 
         self.pasteboard.clearContents()
         self.pasteboard.writeObjects([item])
         self.markOwnWrite()
+    }
+
+    /// Best-effort plain text for the current clipboard: prefers the plain-text
+    /// representation, falls back to extracting text from RTF or HTML for
+    /// clipboards that only carry rich content.
+    func plainTextFromClipboard() -> String? {
+        if let text = self.pasteboard.string(forType: .string) {
+            return self.normalizeLineEndings(text)
+        }
+        if let rtfData = self.pasteboard.data(forType: .rtf),
+           let attributed = NSAttributedString(rtf: rtfData, documentAttributes: nil)
+        {
+            return self.normalizeLineEndings(attributed.string)
+        }
+        if let htmlData = self.pasteboard.data(forType: .html),
+           let attributed = NSAttributedString(
+               html: htmlData,
+               options: [.documentType: NSAttributedString.DocumentType.html],
+               documentAttributes: nil)
+        {
+            return self.normalizeLineEndings(attributed.string)
+        }
+        return nil
     }
 
     private func markOwnWrite() {
@@ -178,16 +236,5 @@ final class ClipboardMonitor: ObservableObject {
         text
             .replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n")
-    }
-
-    @objc
-    private func handleAppActivation(_ notification: Notification) {
-        let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
-        self.updateFrontmostAppName(app)
-    }
-
-    private func updateFrontmostAppName(_ app: NSRunningApplication?) {
-        guard let app, app.bundleIdentifier != Bundle.main.bundleIdentifier else { return }
-        self.frontmostAppName = app.localizedName ?? "current app"
     }
 }

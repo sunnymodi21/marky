@@ -82,6 +82,45 @@ import Testing
         #expect(!monitor.convertClipboardIfNeeded(force: false))
     }
 
+    @Test func plainTextPrefersStringRepresentation() {
+        let (monitor, pasteboard, _) = self.makeMonitor()
+        self.setPlainText("# Title\n\n**bold**", on: pasteboard)
+        #expect(monitor.convertClipboardIfNeeded(force: false))
+
+        // After conversion the clipboard is rich, but plain text is the original markdown.
+        #expect(monitor.plainTextFromClipboard() == "# Title\n\n**bold**")
+    }
+
+    @Test func plainTextFallsBackToRTFExtraction() {
+        let (monitor, pasteboard, _) = self.makeMonitor()
+
+        let attributed = NSAttributedString(string: "rich only content")
+        let rtf = attributed.rtf(
+            from: NSRange(location: 0, length: attributed.length),
+            documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf])!
+        pasteboard.clearContents()
+        pasteboard.setData(rtf, forType: .rtf)
+
+        #expect(monitor.plainTextFromClipboard() == "rich only content")
+    }
+
+    @Test func copyAsPlainTextStripsRichRepresentations() {
+        let (monitor, pasteboard, _) = self.makeMonitor()
+        self.setPlainText("# Title\n\n**bold** text\n\n- a\n- b", on: pasteboard)
+        #expect(monitor.convertClipboardIfNeeded(force: false))
+        #expect(pasteboard.data(forType: .rtf) != nil)
+
+        let plain = monitor.plainTextFromClipboard()!
+        monitor.writePlainText(plain, summary: "Stripped formatting to plain text.")
+
+        #expect(pasteboard.data(forType: .rtf) == nil)
+        #expect(pasteboard.string(forType: .html) == nil)
+        #expect(pasteboard.string(forType: .string) == plain)
+        #expect(pasteboard.types?.contains(ClipboardMonitor.markerType) == true)
+        // Marker prevents the monitor from reconverting the markdown-shaped text.
+        #expect(!monitor.convertClipboardIfNeeded(force: false))
+    }
+
     @Test func ellipsizeKeepsHeadAndTail() {
         let text = String(repeating: "a", count: 60) + String(repeating: "b", count: 60)
         let result = ClipboardMonitor.ellipsize(text, limit: 41)

@@ -3,8 +3,9 @@ import KeyboardShortcuts
 
 @MainActor
 extension KeyboardShortcuts.Name {
-    static let pasteRichText = Self("pasteRichText")
-    static let pasteOriginal = Self("pasteOriginal")
+    static let convertToRichText = Self("pasteRichText") // keep existing user-defaults key
+    static let restoreOriginal = Self("pasteOriginal")
+    static let copyPlainText = Self("copyPlainText")
 }
 
 @MainActor
@@ -22,55 +23,62 @@ final class HotkeyManager: ObservableObject {
     }
 
     private func ensureDefaultShortcuts() {
-        if KeyboardShortcuts.getShortcut(for: .pasteRichText) == nil {
-            KeyboardShortcuts.setShortcut(.init(.m, modifiers: [.command, .option]), for: .pasteRichText)
+        if KeyboardShortcuts.getShortcut(for: .convertToRichText) == nil {
+            KeyboardShortcuts.setShortcut(.init(.m, modifiers: [.command, .option]), for: .convertToRichText)
         }
-        if KeyboardShortcuts.getShortcut(for: .pasteOriginal) == nil {
-            KeyboardShortcuts.setShortcut(.init(.m, modifiers: [.command, .option, .shift]), for: .pasteOriginal)
+        if KeyboardShortcuts.getShortcut(for: .restoreOriginal) == nil {
+            KeyboardShortcuts.setShortcut(
+                .init(.m, modifiers: [.command, .option, .shift]),
+                for: .restoreOriginal)
+        }
+        if KeyboardShortcuts.getShortcut(for: .copyPlainText) == nil {
+            KeyboardShortcuts.setShortcut(.init(.p, modifiers: [.command, .option]), for: .copyPlainText)
         }
     }
 
     private func registerHandlers() {
-        KeyboardShortcuts.onKeyUp(for: .pasteRichText) { [weak self] in
-            self?.pasteRichTextNow()
+        KeyboardShortcuts.onKeyUp(for: .convertToRichText) { [weak self] in
+            self?.convertToRichTextNow()
         }
-        KeyboardShortcuts.onKeyUp(for: .pasteOriginal) { [weak self] in
-            self?.pasteOriginalNow()
+        KeyboardShortcuts.onKeyUp(for: .restoreOriginal) { [weak self] in
+            self?.restoreOriginalNow()
+        }
+        KeyboardShortcuts.onKeyUp(for: .copyPlainText) { [weak self] in
+            self?.copyPlainTextNow()
         }
     }
 
-    /// Force-converts the clipboard (regardless of auto toggle/detection) and pastes.
-    func pasteRichTextNow() {
-        guard self.checkAccessibility() else { return }
+    /// Rewrites the clipboard as rich text (regardless of the auto toggle/detection).
+    /// Pastes only when auto-paste is enabled in Settings; otherwise you paste with ⌘V.
+    func convertToRichTextNow() {
         self.monitor.convertClipboardIfNeeded(force: true)
-        PasteService.sendPasteCommand()
+        self.autoPasteIfEnabled()
     }
 
-    /// Temporarily restores the original markdown as plain text, pastes,
-    /// then restores the rich version.
-    func pasteOriginalNow() {
-        guard self.checkAccessibility() else { return }
-
+    /// Rewrites the clipboard back to the original markdown as plain text only.
+    /// The marker type prevents the monitor from immediately reconverting it.
+    func restoreOriginalNow() {
         let original = self.monitor.lastConversion?.markdown ?? self.monitor.clipboardMarkdown()
         guard let original else { return }
-
-        let richToRestore = self.monitor.hasMarker ? self.monitor.lastConversion : nil
         self.monitor.writePlainMarkdown(original)
-        PasteService.sendPasteCommand()
-
-        if let richToRestore {
-            DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(250)) { [weak self] in
-                self?.monitor.writeRich(richToRestore)
-            }
-        }
+        self.autoPasteIfEnabled()
     }
 
-    private func checkAccessibility() -> Bool {
+    /// Strips all rich formatting: rewrites the clipboard as plain text only.
+    /// Works on any clipboard content, including rich text copied from other apps.
+    func copyPlainTextNow() {
+        guard let text = self.monitor.plainTextFromClipboard() else { return }
+        self.monitor.writePlainText(text, summary: "Stripped formatting to plain text.")
+        self.autoPasteIfEnabled()
+    }
+
+    private func autoPasteIfEnabled() {
+        guard self.settings.autoPasteEnabled else { return }
         self.permissions.refresh()
         guard self.permissions.isTrusted else {
             self.permissions.requestIfNeeded()
-            return false
+            return
         }
-        return true
+        PasteService.sendPasteCommand()
     }
 }
