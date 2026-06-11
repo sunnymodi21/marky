@@ -8,16 +8,14 @@ extension KeyboardShortcuts.Name {
     static let copyPlainText = Self("copyPlainText")
 }
 
+/// Global hotkeys that rewrite the clipboard; paste manually with ⌘V.
+/// No Accessibility permission needed — Marky never synthesizes keystrokes.
 @MainActor
 final class HotkeyManager: ObservableObject {
-    private let settings: AppSettings
     private let monitor: ClipboardMonitor
-    private let permissions: AccessibilityPermissionManager
 
-    init(settings: AppSettings, monitor: ClipboardMonitor, permissions: AccessibilityPermissionManager) {
-        self.settings = settings
+    init(monitor: ClipboardMonitor) {
         self.monitor = monitor
-        self.permissions = permissions
         self.ensureDefaultShortcuts()
         self.registerHandlers()
     }
@@ -49,10 +47,8 @@ final class HotkeyManager: ObservableObject {
     }
 
     /// Rewrites the clipboard as rich text (regardless of the auto toggle/detection).
-    /// Pastes only when auto-paste is enabled in Settings; otherwise you paste with ⌘V.
     func convertToRichTextNow() {
         self.monitor.convertClipboardIfNeeded(force: true)
-        self.autoPasteIfEnabled()
     }
 
     /// Rewrites the clipboard back to the original markdown as plain text only.
@@ -61,7 +57,6 @@ final class HotkeyManager: ObservableObject {
         let original = self.monitor.lastConversion?.markdown ?? self.monitor.clipboardMarkdown()
         guard let original else { return }
         self.monitor.writePlainMarkdown(original)
-        self.autoPasteIfEnabled()
     }
 
     /// Strips all rich formatting: rewrites the clipboard as plain text only.
@@ -69,16 +64,5 @@ final class HotkeyManager: ObservableObject {
     func copyPlainTextNow() {
         guard let text = self.monitor.plainTextFromClipboard() else { return }
         self.monitor.writePlainText(text, summary: "Stripped formatting to plain text.")
-        self.autoPasteIfEnabled()
-    }
-
-    private func autoPasteIfEnabled() {
-        guard self.settings.autoPasteEnabled else { return }
-        self.permissions.refresh()
-        guard self.permissions.isTrusted else {
-            self.permissions.requestIfNeeded()
-            return
-        }
-        PasteService.sendPasteCommand()
     }
 }

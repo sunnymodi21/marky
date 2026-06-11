@@ -9,20 +9,12 @@ final class AppSettings: ObservableObject {
         static let historyEnabled = "historyEnabled"
         static let historyRememberLimit = "historyRememberLimit"
         static let historyDisplayLimit = "historyDisplayLimit"
-        static let autoPasteEnabled = "autoPasteEnabled"
     }
 
     private let defaults: UserDefaults
 
     @Published var autoConvertEnabled: Bool {
         didSet { self.defaults.set(self.autoConvertEnabled, forKey: Keys.autoConvertEnabled) }
-    }
-
-    /// When enabled, hotkeys also synthesize ⌘V after rewriting the clipboard.
-    /// Off by default: requires the Accessibility permission, which doesn't survive
-    /// rebuilds of an ad-hoc signed app.
-    @Published var autoPasteEnabled: Bool {
-        didSet { self.defaults.set(self.autoPasteEnabled, forKey: Keys.autoPasteEnabled) }
     }
 
     @Published var historyEnabled: Bool {
@@ -49,6 +41,5 @@ final class AppSettings: ObservableObject {
         self.historyEnabled = (defaults.object(forKey: Keys.historyEnabled) as? Bool) ?? true
         self.historyRememberLimit = (defaults.object(forKey: Keys.historyRememberLimit) as? Int) ?? 50
         self.historyDisplayLimit = (defaults.object(forKey: Keys.historyDisplayLimit) as? Int) ?? 15
-        self.autoPasteEnabled = (defaults.object(forKey: Keys.autoPasteEnabled) as? Bool) ?? false
     }
 }

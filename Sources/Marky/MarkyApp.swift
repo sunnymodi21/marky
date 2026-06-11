@@ -8,7 +8,6 @@ import SwiftUI
 struct MarkyApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var settings: AppSettings
-    @StateObject private var permissions: AccessibilityPermissionManager
     @StateObject private var history: ClipboardHistoryStore
     @StateObject private var monitor: ClipboardMonitor
     @StateObject private var hotkeys: HotkeyManager
@@ -17,13 +16,11 @@ struct MarkyApp: App {
 
     init() {
         let settings = AppSettings()
-        let permissions = AccessibilityPermissionManager()
         let history = ClipboardHistoryStore(settings: settings)
         let monitor = ClipboardMonitor(settings: settings, history: history)
         monitor.start()
-        let hotkeys = HotkeyManager(settings: settings, monitor: monitor, permissions: permissions)
+        let hotkeys = HotkeyManager(monitor: monitor)
         _settings = StateObject(wrappedValue: settings)
-        _permissions = StateObject(wrappedValue: permissions)
         _history = StateObject(wrappedValue: history)
         _monitor = StateObject(wrappedValue: monitor)
         _hotkeys = StateObject(wrappedValue: hotkeys)
@@ -34,7 +31,6 @@ struct MarkyApp: App {
             MenuContentView(
                 settings: self.settings,
                 monitor: self.monitor,
-                permissions: self.permissions,
                 history: self.history,
                 hotkeys: self.hotkeys,
                 isPresented: self.$isMenuPresented)
@@ -58,7 +54,7 @@ struct MarkyApp: App {
         }
 
         Settings {
-            SettingsView(settings: self.settings, permissions: self.permissions, history: self.history)
+            SettingsView(settings: self.settings, history: self.history)
         }
         .windowResizability(.contentSize)
     }

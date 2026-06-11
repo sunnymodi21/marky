@@ -7,7 +7,6 @@ import SwiftUI
 struct MenuContentView: View {
     @ObservedObject var settings: AppSettings
     @ObservedObject var monitor: ClipboardMonitor
-    @ObservedObject var permissions: AccessibilityPermissionManager
     @ObservedObject var history: ClipboardHistoryStore
     let hotkeys: HotkeyManager
     @Binding var isPresented: Bool
@@ -181,14 +180,6 @@ struct MenuContentView: View {
                 .help("Strip all formatting from the clipboard")
             }
             .controlSize(.small)
-
-            if self.settings.autoPasteEnabled, !self.permissions.isTrusted {
-                Button("Grant Accessibility Permission…") {
-                    self.permissions.requestIfNeeded()
-                    self.permissions.openSystemSettings()
-                }
-                .controlSize(.small)
-            }
         }
         .padding(10)
     }

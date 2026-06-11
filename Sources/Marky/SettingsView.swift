@@ -5,12 +5,11 @@ import SwiftUI
 
 struct SettingsView: View {
     @ObservedObject var settings: AppSettings
-    @ObservedObject var permissions: AccessibilityPermissionManager
     @ObservedObject var history: ClipboardHistoryStore
 
     var body: some View {
         TabView {
-            GeneralPane(settings: self.settings, permissions: self.permissions)
+            GeneralPane(settings: self.settings)
                 .tabItem { Label("General", systemImage: "gearshape") }
             HistoryPane(settings: self.settings, history: self.history)
                 .tabItem { Label("History", systemImage: "clock.arrow.circlepath") }
@@ -67,7 +66,6 @@ private struct HistoryPane: View {
 
 private struct GeneralPane: View {
     @ObservedObject var settings: AppSettings
-    @ObservedObject var permissions: AccessibilityPermissionManager
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var launchAtLoginError: String?
 
@@ -90,43 +88,8 @@ private struct GeneralPane: View {
                     .foregroundStyle(.red)
             }
 
-            Divider()
-
-            Toggle("Paste automatically after hotkeys", isOn: self.$settings.autoPasteEnabled)
-            Text(
-                """
-                Off: hotkeys only rewrite the clipboard — you paste with ⌘V. \
-                On: Marky also sends ⌘V to the frontmost app (requires Accessibility).
-                """)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            if self.settings.autoPasteEnabled {
-                LabeledContent("Accessibility") {
-                    if self.permissions.isTrusted {
-                        Label("Granted", systemImage: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
-                    } else {
-                        Button("Grant…") {
-                            self.permissions.requestIfNeeded()
-                            self.permissions.openSystemSettings()
-                        }
-                    }
-                }
-                if !self.permissions.isTrusted {
-                    Text(
-                        """
-                        Note: rebuilding Marky invalidates this permission (ad-hoc code signature). \
-                        Remove and re-add Marky in System Settings → Privacy & Security → Accessibility \
-                        after each rebuild.
-                        """)
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                }
-            }
         }
         .padding(.vertical, 8)
-        .onAppear { self.permissions.refresh() }
     }
 
     private func updateLaunchAtLogin(_ enable: Bool) {
@@ -150,11 +113,7 @@ private struct ShortcutsPane: View {
             KeyboardShortcuts.Recorder("Convert to Rich Text:", name: .convertToRichText)
             KeyboardShortcuts.Recorder("Restore Original Markdown:", name: .restoreOriginal)
             KeyboardShortcuts.Recorder("Copy as Plain Text:", name: .copyPlainText)
-            Text(
-                """
-                Shortcuts rewrite the clipboard (and show up in History); paste with ⌘V. \
-                Enable "Paste automatically" in General to also paste in one step.
-                """)
+            Text("Shortcuts rewrite the clipboard (and show up in History); paste with ⌘V.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

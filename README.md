@@ -27,7 +27,7 @@ No destructive conversion: the original Markdown is always preserved as the plai
 - Lives in your menu bar. No Dock icon (`LSUIElement`). macOS 15+.
 - Watches the clipboard (~150 ms polling) and auto-converts when text looks like Markdown.
 - Score-based Markdown detection. Shell commands, source code, and bare URLs are left alone.
-- Global hotkeys: **Paste as Rich Text** (⌥⌘M) and **Paste Original Markdown** (⌥⇧⌘M). Synthetic paste requires the Accessibility permission.
+- Global hotkeys rewrite the clipboard (paste with ⌘V): **Convert to Rich Text** (⌥⌘M), **Restore Original Markdown** (⌥⇧⌘M), **Copy as Plain Text** (⌥⌘P). No Accessibility permission needed.
 - GFM support via cmark-gfm: tables, strikethrough, task lists, autolinks.
 - Marker pasteboard type (`com.sunnymodi.marky`) prevents Marky from reprocessing its own writes.
 - Headless CLI for scripts: `pbpaste | marky -`.
