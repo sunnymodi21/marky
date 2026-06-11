@@ -11,6 +11,9 @@ struct MenuContentView: View {
     let hotkeys: HotkeyManager
     @Binding var isPresented: Bool
 
+    /// History entry currently being OCRed (shows a spinner on that row).
+    @State private var recognizingEntryID: UUID?
+
     @State private var query = ""
     @FocusState private var searchFocused: Bool
 
@@ -99,7 +102,9 @@ struct MenuContentView: View {
                             title: self.history.title(for: entry),
                             date: entry.date,
                             thumbnail: self.history.thumbnail(for: entry),
+                            isRecognizing: self.recognizingEntryID == entry.id,
                             action: { self.copy(entry) },
+                            onCopyText: self.isImage(entry) ? { self.copyTextFromImage(entry) } : nil,
                             onDelete: { self.history.delete(entry) })
                     }
                 }
@@ -130,6 +135,29 @@ struct MenuContentView: View {
     private func copy(_ entry: ClipboardEntry) {
         self.history.restore(entry, to: .general)
         self.isPresented = false
+    }
+
+    private func isImage(_ entry: ClipboardEntry) -> Bool {
+        if case .image = entry.content { return true }
+        return false
+    }
+
+    /// OCRs an image clipping (Vision, on-device) and copies the recognized text.
+    private func copyTextFromImage(_ entry: ClipboardEntry) {
+        guard case let .image(pngData) = entry.content, self.recognizingEntryID == nil else { return }
+        self.recognizingEntryID = entry.id
+
+        Task {
+            defer { self.recognizingEntryID = nil }
+            let text = (try? await ImageTextRecognizer.recognizeText(pngData: pngData)) ?? ""
+            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                self.monitor.showStatus("No text recognized in image.")
+                return
+            }
+            self.monitor.writePlainText(text, summary: "Copied text from image.")
+            self.history.recordText(text)
+            self.isPresented = false
+        }
     }
 
     // MARK: - Controls
@@ -218,7 +246,9 @@ private struct HistoryRow: View {
     let title: String
     let date: Date
     let thumbnail: NSImage?
+    var isRecognizing = false
     let action: () -> Void
+    var onCopyText: (() -> Void)?
     let onDelete: () -> Void
 
     @State private var hovering = false
@@ -241,7 +271,20 @@ private struct HistoryRow: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
-                if self.hovering {
+                if self.isRecognizing {
+                    ProgressView()
+                        .controlSize(.small)
+                } else if self.hovering {
+                    if let onCopyText = self.onCopyText {
+                        Button {
+                            onCopyText()
+                        } label: {
+                            Image(systemName: "text.viewfinder")
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Copy text from image (OCR)")
+                    }
                     Button {
                         self.onDelete()
                     } label: {
@@ -262,6 +305,9 @@ private struct HistoryRow: View {
                 .fill(self.hovering ? Color.primary.opacity(0.08) : Color.clear))
         .onHover { self.hovering = $0 }
         .contextMenu {
+            if let onCopyText = self.onCopyText {
+                Button("Copy Text from Image") { onCopyText() }
+            }
             Button("Delete", role: .destructive) { self.onDelete() }
         }
     }

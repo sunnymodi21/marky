@@ -209,6 +209,11 @@ final class ClipboardMonitor: ObservableObject {
         return nil
     }
 
+    /// Surfaces a status line in the menu (used by capture/conversion services).
+    func showStatus(_ message: String) {
+        self.lastSummary = message
+    }
+
     private func markOwnWrite() {
         let count = self.pasteboard.changeCount
         self.ignoredChangeCounts.insert(count)
