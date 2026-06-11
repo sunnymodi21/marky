@@ -82,6 +82,12 @@ final class ClipboardHistoryStore: ObservableObject {
         self.save()
     }
 
+    func delete(_ entry: ClipboardEntry) {
+        self.entries.removeAll { $0.id == entry.id }
+        self.thumbnailCache.removeValue(forKey: entry.id)
+        self.save()
+    }
+
     func clear() {
         self.entries.removeAll()
         self.thumbnailCache.removeAll()

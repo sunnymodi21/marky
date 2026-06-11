@@ -13,7 +13,6 @@ struct MenuContentView: View {
     @Binding var isPresented: Bool
 
     @State private var query = ""
-    @State private var copiedEntryID: UUID?
     @FocusState private var searchFocused: Bool
 
     private var isSearching: Bool {
@@ -101,10 +100,8 @@ struct MenuContentView: View {
                             title: self.history.title(for: entry),
                             date: entry.date,
                             thumbnail: self.history.thumbnail(for: entry),
-                            isCopied: self.copiedEntryID == entry.id)
-                        {
-                            self.copy(entry)
-                        }
+                            action: { self.copy(entry) },
+                            onDelete: { self.history.delete(entry) })
                     }
                 }
                 .padding(4)
@@ -133,13 +130,7 @@ struct MenuContentView: View {
 
     private func copy(_ entry: ClipboardEntry) {
         self.history.restore(entry, to: .general)
-        self.copiedEntryID = entry.id
-        Task { @MainActor in
-            try? await Task.sleep(for: .seconds(1))
-            if self.copiedEntryID == entry.id {
-                self.copiedEntryID = nil
-            }
-        }
+        self.isPresented = false
     }
 
     // MARK: - Controls
@@ -236,8 +227,8 @@ private struct HistoryRow: View {
     let title: String
     let date: Date
     let thumbnail: NSImage?
-    let isCopied: Bool
     let action: () -> Void
+    let onDelete: () -> Void
 
     @State private var hovering = false
 
@@ -259,10 +250,15 @@ private struct HistoryRow: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
-                if self.isCopied {
-                    Label("Copied", systemImage: "checkmark.circle.fill")
-                        .font(.caption2)
-                        .foregroundStyle(.green)
+                if self.hovering {
+                    Button {
+                        self.onDelete()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Delete this clipping")
                 }
             }
             .padding(.horizontal, 6)
@@ -274,5 +270,8 @@ private struct HistoryRow: View {
             RoundedRectangle(cornerRadius: 5)
                 .fill(self.hovering ? Color.primary.opacity(0.08) : Color.clear))
         .onHover { self.hovering = $0 }
+        .contextMenu {
+            Button("Delete", role: .destructive) { self.onDelete() }
+        }
     }
 }

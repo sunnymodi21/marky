@@ -144,6 +144,26 @@ import Testing
         #expect(reloaded.entries.isEmpty)
     }
 
+    @Test func deleteRemovesSingleEntryAndPersists() {
+        let settings = self.makeSettings()
+        let url = self.tempStorageURL()
+        let store = ClipboardHistoryStore(settings: settings, storageURL: url)
+        store.recordText("keep me")
+        store.recordText("delete me")
+
+        let target = store.entries.first { entry in
+            if case let .text(text) = entry.content { return text == "delete me" }
+            return false
+        }!
+        store.delete(target)
+
+        #expect(store.entries.count == 1)
+        #expect(!store.entries.contains { $0.id == target.id })
+
+        let reloaded = ClipboardHistoryStore(settings: settings, storageURL: url)
+        #expect(reloaded.entries.count == 1)
+    }
+
     @Test func searchFindsCaseInsensitiveSubstrings() {
         let store = ClipboardHistoryStore(settings: self.makeSettings(), storageURL: nil)
         store.recordText("# Meeting Notes for Q3")
