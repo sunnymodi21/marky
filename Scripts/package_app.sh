@@ -50,11 +50,16 @@ if [ -z "$SIGN_ID" ]; then
     [ -z "$SIGN_ID" ] && SIGN_ID="$(security find-identity -v -p codesigning | awk -F'"' '/Apple Development/{print $2; exit}')"
 fi
 
+CODESIGN_ARGS=(--force --deep)
+if [ "${MARKY_HARDENED_RUNTIME:-0}" = "1" ]; then
+    CODESIGN_ARGS+=(--options runtime)
+fi
+
 if [ -n "$SIGN_ID" ]; then
-    codesign --force --deep --sign "$SIGN_ID" "$APP"
+    codesign "${CODESIGN_ARGS[@]}" --sign "$SIGN_ID" "$APP"
     echo "Signed with: $SIGN_ID"
 else
-    codesign --force --deep --sign - "$APP"
+    codesign "${CODESIGN_ARGS[@]}" --sign - "$APP"
     echo "Signed ad-hoc (no stable identity found; Accessibility grant won't persist across rebuilds)"
 fi
 

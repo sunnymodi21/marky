@@ -29,10 +29,10 @@ for var in APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
   fi
 done
 
-SIGNING_IDENTITY="${SIGNING_IDENTITY:-$(security find-identity -v -p codesigning \
-  | awk -v team="$APPLE_TEAM_ID" -F'"' '/Developer ID Application/ && $2 ~ team { print $2; exit }')}"
+MARKY_SIGN_ID="${MARKY_SIGN_ID:-${SIGNING_IDENTITY:-$(security find-identity -v -p codesigning \
+  | awk -v team="$APPLE_TEAM_ID" -F'"' '/Developer ID Application/ && $2 ~ team { print $2; exit }')}}"
 
-if [[ -z "$SIGNING_IDENTITY" ]]; then
+if [[ -z "$MARKY_SIGN_ID" ]]; then
   echo "No Developer ID Application identity found for team $APPLE_TEAM_ID" >&2
   exit 1
 fi
@@ -40,10 +40,8 @@ fi
 VERSION="$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$ROOT/Info.plist")"
 DMG="$DIST/Marky-${VERSION}.dmg"
 
-"$ROOT/Scripts/package_app.sh" release
-
-echo "Signing with: $SIGNING_IDENTITY"
-codesign --force --deep --options runtime --sign "$SIGNING_IDENTITY" "$APP"
+echo "Packaging with: $MARKY_SIGN_ID"
+MARKY_SIGN_ID="$MARKY_SIGN_ID" MARKY_HARDENED_RUNTIME=1 "$ROOT/Scripts/package_app.sh" release
 codesign --verify --deep --strict --verbose=2 "$APP"
 
 mkdir -p "$DIST"
