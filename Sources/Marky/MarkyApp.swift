@@ -52,9 +52,12 @@ struct MarkyApp: App {
         .onChange(of: self.monitor.convertPulseID) { _, _ in
             self.pulseStatusItem()
         }
+        .onChange(of: self.hotkeys.panelToggleRequestID) { _, _ in
+            self.isMenuPresented.toggle()
+        }
 
         Settings {
-            SettingsView(settings: self.settings, history: self.history)
+            SettingsView(settings: self.settings, history: self.history, monitor: self.monitor)
         }
         .windowResizability(.contentSize)
     }

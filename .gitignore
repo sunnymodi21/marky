@@ -4,3 +4,4 @@
 *.xcodeproj
 Marky.app/
 dist/
+.env

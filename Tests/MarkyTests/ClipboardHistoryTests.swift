@@ -53,6 +53,26 @@ import Testing
         #expect(store.entries[0].content == .text("a"))
     }
 
+    @Test func pinnedEntriesSortToTopOfSearch() {
+        let store = ClipboardHistoryStore(settings: self.makeSettings(), storageURL: nil)
+        store.recordText("first")
+        store.recordText("second")
+        store.recordText("third")
+
+        // Pin the oldest entry; it should jump ahead of newer, unpinned ones.
+        let oldest = store.entries.first { $0.content == .text("first") }!
+        store.togglePin(oldest)
+
+        let results = store.search("")
+        #expect(results.first?.content == .text("first"))
+        #expect(results.first?.pinned == true)
+        #expect(results.dropFirst().allSatisfy { !$0.pinned })
+
+        // Unpinning restores most-recent-first ordering.
+        store.togglePin(store.search("").first!)
+        #expect(store.search("").first?.content == .text("third"))
+    }
+
     @Test func enforcesRememberLimit() {
         let settings = self.makeSettings()
         settings.historyRememberLimit = 5
@@ -107,6 +127,7 @@ import Testing
         let store = ClipboardHistoryStore(settings: settings, storageURL: url)
         store.recordText("persisted text")
         store.recordImage(pngData: self.makePNG())
+        store.flushPendingSave()
 
         let reloaded = ClipboardHistoryStore(settings: settings, storageURL: url)
         #expect(reloaded.entries.count == 2)
@@ -156,6 +177,7 @@ import Testing
             return false
         }!
         store.delete(target)
+        store.flushPendingSave()
 
         #expect(store.entries.count == 1)
         #expect(!store.entries.contains { $0.id == target.id })

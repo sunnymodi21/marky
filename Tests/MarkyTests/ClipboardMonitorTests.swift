@@ -111,7 +111,7 @@ import Testing
         #expect(pasteboard.data(forType: .rtf) != nil)
 
         let plain = monitor.plainTextFromClipboard()!
-        monitor.writePlainText(plain, summary: "Stripped formatting to plain text.")
+        monitor.writePlainText(plain)
 
         #expect(pasteboard.data(forType: .rtf) == nil)
         #expect(pasteboard.string(forType: .html) == nil)

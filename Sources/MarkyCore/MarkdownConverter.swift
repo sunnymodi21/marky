@@ -12,6 +12,85 @@ public struct ConversionResult: Sendable {
     public let rtf: Data
 }
 
+/// Visual theme for the converted rich-text output.
+public struct ConvertTheme: Sendable {
+    public let bodyFontFamily: String
+    public let bodyFontSize: String
+    public let bodyColor: String
+    public let codeBackground: String
+    public let blockquoteBorderColor: String
+    public let blockquoteColor: String
+    public let tableBorderColor: String
+    public let tableHeaderBackground: String
+    public let linkColor: String
+    public let hrColor: String
+
+    public init(
+        bodyFontFamily: String,
+        bodyFontSize: String,
+        bodyColor: String,
+        codeBackground: String,
+        blockquoteBorderColor: String,
+        blockquoteColor: String,
+        tableBorderColor: String,
+        tableHeaderBackground: String,
+        linkColor: String,
+        hrColor: String
+    ) {
+        self.bodyFontFamily = bodyFontFamily
+        self.bodyFontSize = bodyFontSize
+        self.bodyColor = bodyColor
+        self.codeBackground = codeBackground
+        self.blockquoteBorderColor = blockquoteBorderColor
+        self.blockquoteColor = blockquoteColor
+        self.tableBorderColor = tableBorderColor
+        self.tableHeaderBackground = tableHeaderBackground
+        self.linkColor = linkColor
+        self.hrColor = hrColor
+    }
+
+    /// Light theme (default).
+    public static let light = ConvertTheme(
+        bodyFontFamily: #"-apple-system, "Helvetica Neue", Helvetica, Arial, sans-serif"#,
+        bodyFontSize: "13px",
+        bodyColor: "#000000",
+        codeBackground: "#f2f2f2",
+        blockquoteBorderColor: "#c0c0c0",
+        blockquoteColor: "#444444",
+        tableBorderColor: "#b0b0b0",
+        tableHeaderBackground: "#ebebeb",
+        linkColor: "#0a4db3",
+        hrColor: "#c0c0c0")
+
+    /// Dark theme for dark-mode paste targets.
+    public static let dark = ConvertTheme(
+        bodyFontFamily: #"-apple-system, "Helvetica Neue", Helvetica, Arial, sans-serif"#,
+        bodyFontSize: "13px",
+        bodyColor: "#e8e8e8",
+        codeBackground: "#2d2d2d",
+        blockquoteBorderColor: "#555555",
+        blockquoteColor: "#aaaaaa",
+        tableBorderColor: "#555555",
+        tableHeaderBackground: "#3a3a3a",
+        linkColor: "#6db4ff",
+        hrColor: "#555555")
+
+    /// Returns a copy of this theme with the body and code font sizes adjusted.
+    public func withFontSize(_ px: Int) -> ConvertTheme {
+        ConvertTheme(
+            bodyFontFamily: self.bodyFontFamily,
+            bodyFontSize: "\(px)px",
+            bodyColor: self.bodyColor,
+            codeBackground: self.codeBackground,
+            blockquoteBorderColor: self.blockquoteBorderColor,
+            blockquoteColor: self.blockquoteColor,
+            tableBorderColor: self.tableBorderColor,
+            tableHeaderBackground: self.tableHeaderBackground,
+            linkColor: self.linkColor,
+            hrColor: self.hrColor)
+    }
+}
+
 public struct MarkdownConverter: Sendable {
     public init() {}
 
@@ -48,7 +127,7 @@ public struct MarkdownConverter: Sendable {
     }
 
     /// Wraps an HTML fragment in a minimal styled document tuned for rich-text paste targets.
-    public func styledHTMLDocument(fragment: String) -> String {
+    public func styledHTMLDocument(fragment: String, theme: ConvertTheme = .light) -> String {
         """
         <!DOCTYPE html>
         <html>
@@ -56,30 +135,30 @@ public struct MarkdownConverter: Sendable {
         <meta charset="utf-8">
         <style>
         body {
-            font-family: -apple-system, "Helvetica Neue", Helvetica, Arial, sans-serif;
-            font-size: 13px;
+            font-family: \(theme.bodyFontFamily);
+            font-size: \(theme.bodyFontSize);
             line-height: 1.45;
-            color: #000000;
+            color: \(theme.bodyColor);
         }
         h1 { font-size: 22px; } h2 { font-size: 18px; } h3 { font-size: 15px; }
         h4, h5, h6 { font-size: 13px; }
         code, pre {
             font-family: "SF Mono", Menlo, Monaco, monospace;
             font-size: 12px;
-            background-color: #f2f2f2;
+            background-color: \(theme.codeBackground);
         }
         pre { padding: 8px; }
         blockquote {
             margin-left: 8px;
             padding-left: 8px;
-            border-left: 3px solid #c0c0c0;
-            color: #444444;
+            border-left: 3px solid \(theme.blockquoteBorderColor);
+            color: \(theme.blockquoteColor);
         }
         table { border-collapse: collapse; }
-        th, td { border: 1px solid #b0b0b0; padding: 4px 8px; }
-        th { background-color: #ebebeb; }
-        a { color: #0a4db3; }
-        hr { border: none; border-top: 1px solid #c0c0c0; }
+        th, td { border: 1px solid \(theme.tableBorderColor); padding: 4px 8px; }
+        th { background-color: \(theme.tableHeaderBackground); }
+        a { color: \(theme.linkColor); }
+        hr { border: none; border-top: 1px solid \(theme.hrColor); }
         </style>
         </head>
         <body>
@@ -93,9 +172,13 @@ public struct MarkdownConverter: Sendable {
     ///
     /// Main-actor isolated because AppKit's HTML importer must run on the main thread.
     @MainActor
-    public func convert(_ markdown: String) -> ConversionResult? {
+    public func convert(_ markdown: String, theme: ConvertTheme? = nil, fontSize: Int? = nil) -> ConversionResult? {
         guard let fragment = self.renderHTMLFragment(markdown) else { return nil }
-        let html = self.styledHTMLDocument(fragment: fragment)
+        var resolvedTheme = theme ?? Self.currentTheme()
+        if let fontSize {
+            resolvedTheme = resolvedTheme.withFontSize(fontSize)
+        }
+        let html = self.styledHTMLDocument(fragment: fragment, theme: resolvedTheme)
         guard let htmlData = html.data(using: .utf8) else { return nil }
 
         guard let attributed = NSAttributedString(
@@ -114,5 +197,14 @@ public struct MarkdownConverter: Sendable {
         else { return nil }
 
         return ConversionResult(markdown: markdown, html: html, rtf: rtf)
+    }
+
+    /// Detects whether the app is currently in dark mode and returns the matching theme.
+    @MainActor
+    private static func currentTheme() -> ConvertTheme {
+        guard let app = NSApp else { return .light }
+        let appearance = app.effectiveAppearance
+        let isDark = appearance.bestMatch(from: [.darkAqua, .vibrantDark, .accessibilityHighContrastDarkAqua]) != nil
+        return isDark ? .dark : .light
     }
 }

@@ -21,13 +21,14 @@ final class ClipboardMonitor: ObservableObject {
     private var timer: DispatchSourceTimer?
     private var lastSeenChangeCount: Int
     private var ignoredChangeCounts: Set<Int> = []
+    private var pendingGrace: DispatchWorkItem?
 
     private let pollInterval: DispatchTimeInterval = .milliseconds(150)
     private let pollLeeway: DispatchTimeInterval = .milliseconds(50)
     private let graceDelay: DispatchTimeInterval = .milliseconds(80)
 
-    @Published private(set) var lastSummary: String = ""
     @Published private(set) var convertPulseID: Int = 0
+    @Published private(set) var conversionCount: Int = 0
     private(set) var lastConversion: ConversionResult?
 
     init(settings: AppSettings, pasteboard: NSPasteboard = .general, history: ClipboardHistoryStore? = nil) {
@@ -64,14 +65,25 @@ final class ClipboardMonitor: ObservableObject {
             return
         }
 
+        // Update immediately so subsequent ticks for the same or intermediate
+        // changes don't schedule redundant grace delays.
+        self.lastSeenChangeCount = current
+
+        // Cancel any in-flight grace delay from a previous change; only the
+        // latest clipboard state matters after the delay settles.
+        self.pendingGrace?.cancel()
+
         let observed = current
         // Grace delay lets promised pasteboard data settle before we read/transform.
-        DispatchQueue.main.asyncAfter(deadline: .now() + self.graceDelay) { [weak self] in
+        let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
+            // Only process if no further change arrived after we scheduled.
             guard observed == self.pasteboard.changeCount else { return }
             self.captureClipboardForHistory()
             self.convertClipboardIfNeeded(force: false)
         }
+        self.pendingGrace = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + self.graceDelay, execute: work)
     }
 
     // MARK: - Conversion
@@ -87,36 +99,40 @@ final class ClipboardMonitor: ObservableObject {
         let alreadyConverted = self.hasMarker
         if alreadyConverted, !force { return false }
         if self.isSensitiveContent, !force { return false }
+        if !force, self.isFromExcludedApp { return false }
 
         guard let markdown = self.clipboardMarkdown(),
               !markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else { return false }
 
+        if !force, self.matchesIgnorePatterns(markdown) { return false }
+
         if !force {
             guard self.detector.isMarkdown(markdown, config: self.settings.convertConfig) else { return false }
         }
 
-        guard let result = self.converter.convert(markdown) else {
-            if force { self.lastSummary = "Conversion failed." }
+        guard let result = self.converter.convert(markdown, fontSize: self.settings.outputFontSize) else {
             return false
         }
 
         self.writeRich(result)
         self.lastConversion = result
-        self.updateSummary(with: markdown)
         self.convertPulseID &+= 1
+        self.conversionCount &+= 1
         return true
     }
 
     // MARK: - History capture
 
     /// Records the current clipboard (text or image) into the history.
-    /// Skips our own writes and concealed/transient content (password managers).
+    /// Skips our own writes, concealed/transient content (password managers),
+    /// and clipboard writes from excluded apps.
     func captureClipboardForHistory() {
         guard let history = self.history, self.settings.historyEnabled else { return }
-        guard !self.hasMarker, !self.isSensitiveContent else { return }
+        guard !self.hasMarker, !self.isSensitiveContent, !self.isFromExcludedApp else { return }
 
         if let text = self.clipboardMarkdown() {
+            guard !self.matchesIgnorePatterns(text) else { return }
             history.recordText(text)
         } else if let pngData = self.readImagePNG() {
             history.recordImage(pngData: pngData)
@@ -149,6 +165,24 @@ final class ClipboardMonitor: ObservableObject {
         return types.contains(concealed) || types.contains(transient)
     }
 
+    /// True when the frontmost app is in the user's exclusion list.
+    var isFromExcludedApp: Bool {
+        guard let bundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier else { return false }
+        return self.settings.excludedApps.contains(bundleID)
+    }
+
+    /// True when the clipboard text matches any user-defined ignore regex pattern.
+    func matchesIgnorePatterns(_ text: String) -> Bool {
+        for pattern in self.settings.ignorePatterns {
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { continue }
+            let range = NSRange(text.startIndex..., in: text)
+            if regex.firstMatch(in: text, options: [], range: range) != nil {
+                return true
+            }
+        }
+        return false
+    }
+
     /// Plain text from the pasteboard (the original markdown, even after our own write).
     func clipboardMarkdown() -> String? {
         guard let text = self.pasteboard.string(forType: .string) else { return nil }
@@ -170,13 +204,12 @@ final class ClipboardMonitor: ObservableObject {
 
     /// Writes markdown as plain text only (still marked so we don't reconvert it).
     func writePlainMarkdown(_ markdown: String) {
-        self.writePlainText(markdown, summary: "Restored original Markdown to clipboard.")
+        self.writePlainText(markdown)
     }
 
     /// Writes text as the only representation, stripping any rich formatting.
     /// The marker prevents the monitor from re-detecting/converting it.
-    func writePlainText(_ text: String, summary: String) {
-        self.lastSummary = summary
+    func writePlainText(_ text: String) {
         let item = NSPasteboardItem()
         item.setString(text, forType: .string)
         item.setData(Data(), forType: Self.markerType)
@@ -184,6 +217,21 @@ final class ClipboardMonitor: ObservableObject {
         self.pasteboard.clearContents()
         self.pasteboard.writeObjects([item])
         self.markOwnWrite()
+    }
+
+    /// Converts arbitrary text to rich text and writes it to the clipboard.
+    /// Used by "Copy as Rich Text" from history entries. Always forces conversion.
+    @discardableResult
+    func convertTextToRichText(_ text: String) -> Bool {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        guard let result = self.converter.convert(text, fontSize: self.settings.outputFontSize) else {
+            return false
+        }
+        self.writeRich(result)
+        self.lastConversion = result
+        self.convertPulseID &+= 1
+        self.conversionCount &+= 1
+        return true
     }
 
     /// Best-effort plain text for the current clipboard: prefers the plain-text
@@ -209,11 +257,6 @@ final class ClipboardMonitor: ObservableObject {
         return nil
     }
 
-    /// Surfaces a status line in the menu (used by capture/conversion services).
-    func showStatus(_ message: String) {
-        self.lastSummary = message
-    }
-
     private func markOwnWrite() {
         let count = self.pasteboard.changeCount
         self.ignoredChangeCounts.insert(count)
@@ -221,13 +264,6 @@ final class ClipboardMonitor: ObservableObject {
     }
 
     // MARK: - Helpers
-
-    private func updateSummary(with markdown: String) {
-        let singleLine = markdown
-            .replacingOccurrences(of: "\n", with: " ")
-            .trimmingCharacters(in: .whitespaces)
-        self.lastSummary = Self.ellipsize(singleLine, limit: 90)
-    }
 
     static func ellipsize(_ text: String, limit: Int) -> String {
         guard limit >= 3, text.count > limit else { return text }

@@ -9,6 +9,9 @@ final class AppSettings: ObservableObject {
         static let historyEnabled = "historyEnabled"
         static let historyRememberLimit = "historyRememberLimit"
         static let historyDisplayLimit = "historyDisplayLimit"
+        static let excludedApps = "excludedApps"
+        static let ignorePatterns = "ignorePatterns"
+        static let outputFontSize = "outputFontSize"
     }
 
     private let defaults: UserDefaults
@@ -31,6 +34,21 @@ final class AppSettings: ObservableObject {
         didSet { self.defaults.set(self.historyDisplayLimit, forKey: Keys.historyDisplayLimit) }
     }
 
+    /// Bundle IDs of apps whose clipboard writes should be skipped (no history, no auto-convert).
+    @Published var excludedApps: [String] {
+        didSet { self.defaults.set(self.excludedApps, forKey: Keys.excludedApps) }
+    }
+
+    /// User-defined regex patterns. Clipboard text matching any pattern is skipped.
+    @Published var ignorePatterns: [String] {
+        didSet { self.defaults.set(self.ignorePatterns, forKey: Keys.ignorePatterns) }
+    }
+
+    /// Base font size (px) for the rich-text output.
+    @Published var outputFontSize: Int {
+        didSet { self.defaults.set(self.outputFontSize, forKey: Keys.outputFontSize) }
+    }
+
     var convertConfig: ConvertConfig {
         ConvertConfig()
     }
@@ -41,5 +59,8 @@ final class AppSettings: ObservableObject {
         self.historyEnabled = (defaults.object(forKey: Keys.historyEnabled) as? Bool) ?? true
         self.historyRememberLimit = (defaults.object(forKey: Keys.historyRememberLimit) as? Int) ?? 50
         self.historyDisplayLimit = (defaults.object(forKey: Keys.historyDisplayLimit) as? Int) ?? 15
+        self.excludedApps = (defaults.array(forKey: Keys.excludedApps) as? [String]) ?? []
+        self.ignorePatterns = (defaults.array(forKey: Keys.ignorePatterns) as? [String]) ?? []
+        self.outputFontSize = (defaults.object(forKey: Keys.outputFontSize) as? Int) ?? 13
     }
 }
