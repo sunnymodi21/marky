@@ -104,11 +104,57 @@ private struct StatusLabel: View {
         Label {
             Text("Marky")
         } icon: {
-            Image(systemName: "doc.richtext")
-                .symbolRenderingMode(.hierarchical)
+            StatusIcon()
         }
         .opacity(self.isEnabled ? 1.0 : 0.45)
     }
+}
+
+private struct StatusIcon: View {
+    var body: some View {
+        Image(nsImage: StatusIconImage.image)
+            .resizable()
+            .interpolation(.high)
+        .frame(width: 22, height: 18)
+        .accessibilityHidden(true)
+    }
+}
+
+@MainActor
+private enum StatusIconImage {
+    static let image: NSImage = {
+        let image = NSImage(size: NSSize(width: 22, height: 18))
+        image.lockFocus()
+
+        NSColor.black.setStroke()
+        NSColor.black.setFill()
+
+        let accent = NSBezierPath(roundedRect: NSRect(x: 2.4, y: 8.3, width: 2.5, height: 5.2), xRadius: 1.25, yRadius: 1.25)
+        accent.fill()
+
+        let mark = NSBezierPath()
+        mark.lineWidth = 3.05
+        mark.lineCapStyle = .round
+        mark.lineJoinStyle = .round
+        mark.move(to: NSPoint(x: 7.1, y: 4.4))
+        mark.line(to: NSPoint(x: 7.1, y: 10.2))
+        mark.curve(
+            to: NSPoint(x: 11.4, y: 10.2),
+            controlPoint1: NSPoint(x: 7.1, y: 12.5),
+            controlPoint2: NSPoint(x: 11.4, y: 12.5))
+        mark.line(to: NSPoint(x: 11.4, y: 4.4))
+        mark.move(to: NSPoint(x: 11.4, y: 10.2))
+        mark.curve(
+            to: NSPoint(x: 15.7, y: 10.2),
+            controlPoint1: NSPoint(x: 11.4, y: 12.5),
+            controlPoint2: NSPoint(x: 15.7, y: 12.5))
+        mark.line(to: NSPoint(x: 15.7, y: 4.4))
+        mark.stroke()
+
+        image.unlockFocus()
+        image.isTemplate = true
+        return image
+    }()
 }
 
 @MainActor
