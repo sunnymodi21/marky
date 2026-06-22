@@ -7,10 +7,11 @@ struct SettingsView: View {
     @ObservedObject var settings: AppSettings
     @ObservedObject var history: ClipboardHistoryStore
     @ObservedObject var monitor: ClipboardMonitor
+    @ObservedObject var permissions: AccessibilityPermissionManager
 
     var body: some View {
         TabView {
-            GeneralPane(settings: self.settings)
+            GeneralPane(settings: self.settings, permissions: self.permissions)
                 .tabItem { Label("General", systemImage: "gearshape") }
             HistoryPane(settings: self.settings, history: self.history)
                 .tabItem { Label("History", systemImage: "clock.arrow.circlepath") }
@@ -19,7 +20,7 @@ struct SettingsView: View {
             AboutPane(conversionCount: self.monitor.conversionCount)
                 .tabItem { Label("About", systemImage: "info.circle") }
         }
-        .frame(width: 440)
+        .frame(width: 520)
         .padding()
     }
 }
@@ -40,8 +41,7 @@ private struct HistoryPane: View {
         Form {
             Toggle("Keep clipboard history", isOn: self.$settings.historyEnabled)
             Text("Records text and images you copy. Click an entry in the menu to copy it back.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .settingsDescription()
 
             Divider()
 
@@ -66,8 +66,7 @@ private struct HistoryPane: View {
             }
 
             Text("Content marked confidential by password managers is never recorded.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .settingsDescription()
 
             Divider()
 
@@ -75,8 +74,7 @@ private struct HistoryPane: View {
                 Text("Ignore Patterns")
                     .font(.headline)
                 Text("Clipboard text matching any regex pattern is skipped (no history, no auto-convert).")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .settingsDescription()
 
                 ForEach(self.settings.ignorePatterns, id: \.self) { pattern in
                     HStack {
@@ -125,32 +123,24 @@ private struct HistoryPane: View {
             }
         }
         .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
 private struct GeneralPane: View {
     @ObservedObject var settings: AppSettings
+    @ObservedObject var permissions: AccessibilityPermissionManager
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var launchAtLoginError: String?
 
     /// Running apps shown in the exclusion list (refreshed on appear).
     @State private var runningApps: [NSRunningApplication] = []
-    @State private var appFilter = ""
-
-    private var filteredApps: [NSRunningApplication] {
-        let trimmed = self.appFilter.trimmingCharacters(in: .whitespaces).lowercased()
-        guard !trimmed.isEmpty else { return self.runningApps }
-        return self.runningApps.filter { app in
-            (app.localizedName ?? "").lowercased().contains(trimmed)
-        }
-    }
 
     var body: some View {
         Form {
             Toggle("Auto-convert Markdown on copy", isOn: self.$settings.autoConvertEnabled)
             Text("Converts copied text when it clearly looks like Markdown. Shell commands, source code, and bare URLs are left alone.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .settingsDescription()
 
             Divider()
 
@@ -160,8 +150,7 @@ private struct GeneralPane: View {
                 in: 10...20,
                 step: 1)
             Text("Base text size for the converted rich text.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .settingsDescription()
 
             Divider()
 
@@ -177,20 +166,40 @@ private struct GeneralPane: View {
 
             Divider()
 
+            Toggle("Paste on click in the history window", isOn: self.$settings.autoPasteEnabled)
+            Text("When you pick a clip in the floating history window (global shortcut), Marky pastes it into the app you were using. Requires Accessibility permission.")
+                .settingsDescription()
+
+            if self.settings.autoPasteEnabled {
+                HStack(spacing: 6) {
+                    Image(systemName: self.permissions.isTrusted ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+                        .foregroundStyle(self.permissions.isTrusted ? .green : .orange)
+                    if self.permissions.isTrusted {
+                        Text("Accessibility permission granted.")
+                            .settingsDescription()
+                    } else {
+                        Text("Accessibility permission needed to paste.")
+                            .settingsDescription()
+                        Button("Grant…") { self.permissions.requestIfNeeded() }
+                            .controlSize(.small)
+                        Button("Open Settings") { self.permissions.openSystemSettings() }
+                            .controlSize(.small)
+                    }
+                }
+                .onAppear { self.permissions.refresh() }
+            }
+
+            Divider()
+
             VStack(alignment: .leading, spacing: 6) {
                 Text("Excluded Apps")
                     .font(.headline)
                 Text("Clipboard writes from these apps are skipped (no history, no auto-convert).")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                TextField("Filter apps...", text: self.$appFilter)
-                    .textFieldStyle(.roundedBorder)
-                    .controlSize(.small)
+                    .settingsDescription()
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 4) {
-                        ForEach(self.filteredApps, id: \.bundleIdentifier) { app in
+                        ForEach(self.runningApps, id: \.bundleIdentifier) { app in
                             if let bundleID = app.bundleIdentifier, let name = app.localizedName {
                                 Toggle(name, isOn: Binding(
                                     get: { !self.settings.excludedApps.contains(bundleID) },
@@ -217,6 +226,7 @@ private struct GeneralPane: View {
             .onAppear { self.refreshRunningApps() }
         }
         .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func refreshRunningApps() {
@@ -247,14 +257,25 @@ private struct ShortcutsPane: View {
             KeyboardShortcuts.Recorder("Convert to Rich Text:", name: .convertToRichText)
             KeyboardShortcuts.Recorder("Restore Original Markdown:", name: .restoreOriginal)
             KeyboardShortcuts.Recorder("Copy as Plain Text:", name: .copyPlainText)
-            Text("Open the panel with a global shortcut, then use ↑↓ to navigate, Enter to copy, Esc to close.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            Text("Opens a floating history window. Use ↑↓ to navigate, Enter or click to paste the clip into the app you were using, Esc to close.")
+                .settingsDescription()
             Text("Other shortcuts rewrite the clipboard (and show up in History); paste with ⌘V.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .settingsDescription()
         }
         .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private extension View {
+    func settingsDescription() -> some View {
+        self
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.leading)
+            .lineLimit(nil)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

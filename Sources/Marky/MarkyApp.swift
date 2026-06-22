@@ -11,6 +11,8 @@ struct MarkyApp: App {
     @StateObject private var history: ClipboardHistoryStore
     @StateObject private var monitor: ClipboardMonitor
     @StateObject private var hotkeys: HotkeyManager
+    @StateObject private var permissions: AccessibilityPermissionManager
+    @StateObject private var historyPanel: HistoryPanelController
     @State private var isMenuPresented = false
     @State private var statusItem: NSStatusItem?
 
@@ -20,10 +22,20 @@ struct MarkyApp: App {
         let monitor = ClipboardMonitor(settings: settings, history: history)
         monitor.start()
         let hotkeys = HotkeyManager(monitor: monitor)
+        let permissions = AccessibilityPermissionManager()
+        let historyPanel = HistoryPanelController(
+            settings: settings,
+            history: history,
+            monitor: monitor,
+            hotkeys: hotkeys,
+            permissions: permissions)
+        hotkeys.onOpenHistory = { [weak historyPanel] in historyPanel?.toggle() }
         _settings = StateObject(wrappedValue: settings)
         _history = StateObject(wrappedValue: history)
         _monitor = StateObject(wrappedValue: monitor)
         _hotkeys = StateObject(wrappedValue: hotkeys)
+        _permissions = StateObject(wrappedValue: permissions)
+        _historyPanel = StateObject(wrappedValue: historyPanel)
     }
 
     var body: some Scene {
@@ -52,12 +64,15 @@ struct MarkyApp: App {
         .onChange(of: self.monitor.convertPulseID) { _, _ in
             self.pulseStatusItem()
         }
-        .onChange(of: self.hotkeys.panelToggleRequestID) { _, _ in
-            self.isMenuPresented.toggle()
-        }
+        // Hotkey toggles the window via hotkeys.onOpenHistory (set in init) — a direct
+        // call, not this scene observer, which may not fire when the menu isn't open.
 
         Settings {
-            SettingsView(settings: self.settings, history: self.history, monitor: self.monitor)
+            SettingsView(
+                settings: self.settings,
+                history: self.history,
+                monitor: self.monitor,
+                permissions: self.permissions)
         }
         .windowResizability(.contentSize)
     }

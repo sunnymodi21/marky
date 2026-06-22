@@ -14,6 +14,8 @@
     <string>Marky</string>
     <key>CFBundleDisplayName</key>
     <string>Marky</string>
+    <key>CFBundleIconFile</key>
+    <string>Marky</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>

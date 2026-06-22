@@ -257,7 +257,11 @@ final class ClipboardMonitor: ObservableObject {
         return nil
     }
 
-    private func markOwnWrite() {
+    /// Registers the current pasteboard changeCount as Marky's own write so the
+    /// monitor never re-records or re-converts it. Callers that write to the
+    /// pasteboard outside the monitor (e.g. restoring a clip to paste it) call this
+    /// immediately after writing.
+    func markOwnWrite() {
         let count = self.pasteboard.changeCount
         self.ignoredChangeCounts.insert(count)
         self.lastSeenChangeCount = count

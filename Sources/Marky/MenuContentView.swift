@@ -11,6 +11,16 @@ struct MenuContentView: View {
     let hotkeys: HotkeyManager
     @Binding var isPresented: Bool
 
+    /// Set by the standalone history window: invoked after a clip is restored to
+    /// the clipboard so the host can paste it (⌘V) into the previously focused app.
+    /// When nil (menu-bar panel), copy shows a brief checkmark and closes the panel.
+    var onPick: ((ClipboardEntry) -> Void)?
+
+    /// Set by the standalone window: pastes whatever is currently on the clipboard
+    /// into the previously focused app. Used by the "Paste as" format buttons after
+    /// they rewrite the clipboard.
+    var onPasteCurrent: (() -> Void)?
+
     /// History entry currently being OCRed (shows a spinner on that row).
     @State private var recognizingEntryID: UUID?
 
@@ -73,8 +83,12 @@ struct MenuContentView: View {
                 self.historyList
             }
 
-            Divider()
-            self.controls
+            // Convert/paste actions live only in the standalone paste overlay
+            // (onPick set), not the menu-bar dropdown.
+            if self.onPick != nil {
+                Divider()
+                self.controls
+            }
             Divider()
             self.footer
         }
@@ -219,6 +233,22 @@ struct MenuContentView: View {
     }
 
     private func copy(_ entry: ClipboardEntry) {
+        // Standalone window: place the clip on the clipboard, then hand off to the
+        // host to paste into the prior app. When auto-convert is on and the clip is
+        // Markdown, paste it as rich text; otherwise paste it verbatim.
+        if let onPick = self.onPick {
+            if self.settings.autoConvertEnabled,
+               case let .text(text) = entry.content,
+               self.isMarkdownEntry(entry),
+               self.monitor.convertTextToRichText(text)
+            {
+                // convertTextToRichText wrote rich text to the clipboard (and marked it).
+            } else {
+                self.history.restore(entry, to: .general)
+            }
+            onPick(entry)
+            return
+        }
         self.history.restore(entry, to: .general)
         self.copiedEntryID = entry.id
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
@@ -320,10 +350,9 @@ struct MenuContentView: View {
             defer { self.recognizingEntryID = nil }
             let text = (try? await ImageTextRecognizer.recognizeText(pngData: pngData)) ?? ""
             guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                self.monitor.showStatus("No text recognized in image.")
                 return
             }
-            self.monitor.writePlainText(text, summary: "Copied text from image.")
+            self.monitor.writePlainText(text)
             self.history.recordText(text)
             self.isPresented = false
         }
@@ -337,6 +366,16 @@ struct MenuContentView: View {
         }
     }
 
+    /// After a "Paste as" button rewrites the clipboard, paste it into the prior app
+    /// (overlay) or just close (defensive fallback).
+    private func pasteCurrent() {
+        if let onPasteCurrent = self.onPasteCurrent {
+            onPasteCurrent()
+        } else {
+            self.isPresented = false
+        }
+    }
+
     // MARK: - Controls
 
     private var controls: some View {
@@ -345,37 +384,37 @@ struct MenuContentView: View {
                 .toggleStyle(.switch)
                 .controlSize(.mini)
 
-            Text("Copy clipboard as")
+            Text("Paste as")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
 
             HStack(spacing: 6) {
                 Button {
                     self.hotkeys.convertToRichTextNow()
-                    self.isPresented = false
+                    self.pasteCurrent()
                 } label: {
                     Label("Rich Text", systemImage: "doc.richtext")
                         .frame(maxWidth: .infinity)
                 }
-                .help("Convert clipboard Markdown to formatted rich text")
+                .help("Paste the clipboard Markdown as formatted rich text")
 
                 Button {
                     self.hotkeys.restoreOriginalNow()
-                    self.isPresented = false
+                    self.pasteCurrent()
                 } label: {
                     Label("Markdown", systemImage: "doc.plaintext")
                         .frame(maxWidth: .infinity)
                 }
-                .help("Restore the original Markdown to the clipboard")
+                .help("Paste the original Markdown text")
 
                 Button {
                     self.hotkeys.copyPlainTextNow()
-                    self.isPresented = false
+                    self.pasteCurrent()
                 } label: {
                     Label("Plain Text", systemImage: "doc.text")
                         .frame(maxWidth: .infinity)
                 }
-                .help("Strip all formatting from the clipboard")
+                .help("Paste with all formatting stripped")
             }
             .controlSize(.small)
         }
@@ -478,54 +517,47 @@ private struct HistoryRow: View {
                     } else if self.isRecognizing {
                         ProgressView()
                             .controlSize(.small)
-                    } else if self.hovering || self.isPinned {
-                        if self.isPinned {
-                            Image(systemName: "pin.fill")
-                                .foregroundStyle(.orange)
-                                .font(.caption)
-                        }
-                        if self.hovering {
-                            if let onCopyText = self.onCopyText {
-                                Button {
-                                    onCopyText()
-                                } label: {
-                                    Image(systemName: "text.viewfinder")
-                                        .foregroundStyle(.secondary)
-                                }
-                                .buttonStyle(.plain)
-                                .help("Copy text from image (OCR)")
-                            }
-                            if self.fullText != nil {
-                                Button {
-                                    withAnimation(.easeInOut(duration: 0.15)) {
-                                        self.expanded.toggle()
-                                    }
-                                } label: {
-                                    Image(systemName: self.expanded ? "chevron.up" : "chevron.down")
-                                        .foregroundStyle(.secondary)
-                                }
-                                .buttonStyle(.plain)
-                                .help(self.expanded ? "Collapse" : "Expand preview")
-                            }
-                            if let onPin = self.onPin {
-                                Button {
-                                    onPin()
-                                } label: {
-                                    Image(systemName: self.isPinned ? "pin.slash" : "pin")
-                                        .foregroundStyle(.secondary)
-                                }
-                                .buttonStyle(.plain)
-                                .help(self.isPinned ? "Unpin" : "Pin to top")
-                            }
+                    } else if self.hovering {
+                        if let onCopyText = self.onCopyText {
                             Button {
-                                self.onDelete()
+                                onCopyText()
                             } label: {
-                                Image(systemName: "xmark.circle.fill")
+                                Image(systemName: "text.viewfinder")
                                     .foregroundStyle(.secondary)
                             }
                             .buttonStyle(.plain)
-                            .help("Delete this clipping")
+                            .help("Copy text from image (OCR)")
                         }
+                        if self.fullText != nil {
+                            Button {
+                                withAnimation(.easeInOut(duration: 0.15)) {
+                                    self.expanded.toggle()
+                                }
+                            } label: {
+                                Image(systemName: self.expanded ? "chevron.up" : "chevron.down")
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .help(self.expanded ? "Collapse" : "Expand preview")
+                        }
+                        if let onPin = self.onPin {
+                            Button {
+                                onPin()
+                            } label: {
+                                Image(systemName: self.isPinned ? "pin.fill" : "pin")
+                                    .foregroundStyle(self.isPinned ? .orange : .secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .help(self.isPinned ? "Unpin" : "Pin to top")
+                        }
+                        Button {
+                            self.onDelete()
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Delete this clipping")
                     }
                 }
                 .padding(.horizontal, 6)

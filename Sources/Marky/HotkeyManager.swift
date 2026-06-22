@@ -15,9 +15,11 @@ extension KeyboardShortcuts.Name {
 final class HotkeyManager: ObservableObject {
     private let monitor: ClipboardMonitor
 
-    /// Incremented each time the open-history hotkey fires.
-    /// The app observes this to toggle the menu panel.
-    @Published private(set) var panelToggleRequestID: Int = 0
+    /// Invoked when the open-history hotkey fires. Set by the app to toggle the
+    /// standalone history window. A direct callback is more reliable than observing a
+    /// published counter from a SwiftUI scene (scene `.onChange` may not fire when the
+    /// menu-bar scene isn't rendering).
+    var onOpenHistory: (() -> Void)?
 
     init(monitor: ClipboardMonitor) {
         self.monitor = monitor
@@ -53,7 +55,7 @@ final class HotkeyManager: ObservableObject {
             self?.copyPlainTextNow()
         }
         KeyboardShortcuts.onKeyUp(for: .openHistory) { [weak self] in
-            self?.panelToggleRequestID &+= 1
+            self?.onOpenHistory?()
         }
     }
 

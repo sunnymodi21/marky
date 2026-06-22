@@ -12,6 +12,7 @@ final class AppSettings: ObservableObject {
         static let excludedApps = "excludedApps"
         static let ignorePatterns = "ignorePatterns"
         static let outputFontSize = "outputFontSize"
+        static let autoPasteEnabled = "autoPasteEnabled"
     }
 
     private let defaults: UserDefaults
@@ -49,6 +50,13 @@ final class AppSettings: ObservableObject {
         didSet { self.defaults.set(self.outputFontSize, forKey: Keys.outputFontSize) }
     }
 
+    /// When enabled, clicking a clip in the standalone history window synthesizes
+    /// ⌘V into the previously focused app after restoring it to the clipboard.
+    /// Requires the Accessibility permission; falls back to copy-only when not granted.
+    @Published var autoPasteEnabled: Bool {
+        didSet { self.defaults.set(self.autoPasteEnabled, forKey: Keys.autoPasteEnabled) }
+    }
+
     var convertConfig: ConvertConfig {
         ConvertConfig()
     }
@@ -62,5 +70,6 @@ final class AppSettings: ObservableObject {
         self.excludedApps = (defaults.array(forKey: Keys.excludedApps) as? [String]) ?? []
         self.ignorePatterns = (defaults.array(forKey: Keys.ignorePatterns) as? [String]) ?? []
         self.outputFontSize = (defaults.object(forKey: Keys.outputFontSize) as? Int) ?? 13
+        self.autoPasteEnabled = (defaults.object(forKey: Keys.autoPasteEnabled) as? Bool) ?? true
     }
 }
