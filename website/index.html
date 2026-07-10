@@ -1,0 +1,536 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Marky is a macOS menu-bar app that turns copied Markdown into rich text automatically — paste formatted text into Google Docs, Slack, and Mail.">
+  <title>Marky — Copy Markdown, paste rich text</title>
+</head>
+<body>
+<style>
+  :root {
+    --paper: #FAF9F5;
+    --card: #FFFFFF;
+    --ink: #21231E;
+    --muted: #6C6E63;
+    --line: #E5E4DA;
+    --accent: #14685A;
+    --accent-hover: #0F5548;
+    --accent-ink: #FFFFFF;
+    --code-bg: #F1F0E8;
+    --kbd-bg: #FFFFFF;
+    --shadow: 0 1px 2px rgba(30, 32, 26, 0.06), 0 12px 32px rgba(30, 32, 26, 0.08);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #15171A;
+      --card: #1C1F21;
+      --ink: #E8EAE3;
+      --muted: #9CA095;
+      --line: #2B2F30;
+      --accent: #45BFA4;
+      --accent-hover: #5FD0B6;
+      --accent-ink: #0C2620;
+      --code-bg: #22262A;
+      --kbd-bg: #23272A;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 32px rgba(0, 0, 0, 0.35);
+    }
+  }
+  :root[data-theme="light"] {
+    --paper: #FAF9F5;
+    --card: #FFFFFF;
+    --ink: #21231E;
+    --muted: #6C6E63;
+    --line: #E5E4DA;
+    --accent: #14685A;
+    --accent-hover: #0F5548;
+    --accent-ink: #FFFFFF;
+    --code-bg: #F1F0E8;
+    --kbd-bg: #FFFFFF;
+    --shadow: 0 1px 2px rgba(30, 32, 26, 0.06), 0 12px 32px rgba(30, 32, 26, 0.08);
+  }
+  :root[data-theme="dark"] {
+    --paper: #15171A;
+    --card: #1C1F21;
+    --ink: #E8EAE3;
+    --muted: #9CA095;
+    --line: #2B2F30;
+    --accent: #45BFA4;
+    --accent-hover: #5FD0B6;
+    --accent-ink: #0C2620;
+    --code-bg: #22262A;
+    --kbd-bg: #23272A;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 32px rgba(0, 0, 0, 0.35);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --serif: ui-serif, "New York", "Iowan Old Style", Georgia, serif;
+    --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Segoe UI", sans-serif;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  }
+
+  body {
+    font-family: var(--sans);
+    background: var(--paper);
+    color: var(--ink);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection { background: var(--accent); color: var(--accent-ink); }
+
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  a:focus-visible, button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
+
+  .wrap { max-width: 1020px; margin: 0 auto; padding: 0 24px; }
+
+  /* ---------- Nav ---------- */
+  nav {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 20px 0;
+  }
+  .wordmark {
+    font-family: var(--mono);
+    font-size: 17px; font-weight: 600; color: var(--ink);
+    letter-spacing: -0.01em;
+  }
+  .wordmark .tick { color: var(--accent); }
+  .nav-links { display: flex; gap: 28px; align-items: center; }
+  .nav-links a { color: var(--muted); font-size: 14px; }
+  .nav-links a:hover { color: var(--ink); text-decoration: none; }
+  .nav-links .btn { color: var(--accent-ink); }
+
+  /* ---------- Buttons ---------- */
+  .btn {
+    display: inline-block;
+    background: var(--accent); color: var(--accent-ink);
+    font-size: 15px; font-weight: 600;
+    padding: 10px 22px; border-radius: 8px;
+    border: none; cursor: pointer;
+  }
+  .btn:hover { background: var(--accent-hover); text-decoration: none; }
+  .btn-ghost {
+    background: transparent; color: var(--ink);
+    border: 1px solid var(--line);
+  }
+  .btn-ghost:hover { background: var(--code-bg); border-color: var(--muted); }
+  .btn-lg { font-size: 16px; padding: 13px 28px; }
+
+  /* ---------- Hero ---------- */
+  .hero {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 56px; align-items: center;
+    padding: 72px 0 88px;
+  }
+  .hero-copy .eyebrow {
+    font-family: var(--mono); font-size: 12px; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--muted);
+    margin-bottom: 20px;
+  }
+  .headline { font-size: clamp(34px, 5vw, 50px); line-height: 1.14; text-wrap: balance; }
+  .headline .md-line {
+    display: block;
+    font-family: var(--mono); font-weight: 500;
+    font-size: 0.72em; color: var(--muted);
+    margin-bottom: 10px;
+  }
+  .headline .md-line .syntax { color: var(--accent); }
+  .headline .rich-line {
+    display: block;
+    font-family: var(--serif); font-weight: 700;
+    letter-spacing: -0.015em;
+  }
+  .hero-copy p.sub {
+    font-size: 17px; color: var(--muted);
+    margin: 22px 0 30px; max-width: 42ch;
+  }
+  .cta-row { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
+  .fine {
+    font-size: 13px; color: var(--muted); margin-top: 16px;
+    font-family: var(--mono);
+  }
+
+  /* ---------- Clipboard demo ---------- */
+  .demo { display: flex; flex-direction: column; gap: 6px; }
+  .clip-label {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--muted); margin: 0 0 6px 4px;
+  }
+  .clip {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 18px 20px;
+    box-shadow: var(--shadow);
+    font-size: 13.5px;
+    line-height: 1.55;
+  }
+  .clip-md { font-family: var(--mono); white-space: pre; overflow-x: auto; color: var(--ink); }
+  .clip-md .syntax { color: var(--accent); font-weight: 600; }
+  .demo-arrow {
+    text-align: center; color: var(--muted);
+    font-family: var(--mono); font-size: 12px;
+    padding: 8px 0;
+  }
+  .demo-arrow .glyph { color: var(--accent); font-size: 15px; }
+  .clip-rich { font-family: var(--serif); font-size: 14.5px; }
+  .clip-rich h4 { font-size: 17px; margin-bottom: 8px; font-weight: 700; }
+  .clip-rich ul { margin: 6px 0 8px 22px; }
+  .clip-rich li { margin: 2px 0; }
+  .clip-rich code {
+    font-family: var(--mono); font-size: 0.85em;
+    background: var(--code-bg); padding: 1px 5px; border-radius: 4px;
+  }
+  .clip-rich blockquote {
+    border-left: 3px solid var(--accent);
+    padding-left: 12px; color: var(--muted); font-style: italic;
+    margin-top: 8px;
+  }
+
+  /* ---------- Sections ---------- */
+  section { padding: 64px 0; border-top: 1px solid var(--line); }
+  .section-label {
+    font-family: var(--mono); font-size: 12px; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--accent); margin-bottom: 12px;
+  }
+  h2 {
+    font-family: var(--serif); font-size: clamp(26px, 3.4vw, 34px);
+    font-weight: 700; letter-spacing: -0.01em; text-wrap: balance;
+    margin-bottom: 14px;
+  }
+  .section-intro { color: var(--muted); max-width: 58ch; font-size: 16px; }
+
+  /* How it works */
+  .steps {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: 28px; margin-top: 40px;
+  }
+  .step .step-num {
+    font-family: var(--mono); font-size: 13px; color: var(--accent);
+    margin-bottom: 10px;
+  }
+  .step h3 { font-size: 17px; margin-bottom: 6px; }
+  .step p { font-size: 14.5px; color: var(--muted); }
+  .step kbd { white-space: nowrap; }
+
+  /* Features */
+  .features {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: 20px; margin-top: 40px;
+  }
+  .feature {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 12px; padding: 22px;
+  }
+  .feature h3 { font-size: 16px; margin-bottom: 8px; }
+  .feature p { font-size: 14px; color: var(--muted); }
+  .feature .glyph {
+    font-family: var(--mono); font-size: 15px; color: var(--accent);
+    display: block; margin-bottom: 12px;
+  }
+
+  /* Hotkeys */
+  kbd {
+    font-family: var(--mono); font-size: 12px;
+    background: var(--kbd-bg); border: 1px solid var(--line);
+    border-bottom-width: 2px; border-radius: 6px;
+    padding: 2px 7px;
+  }
+  .hotkey-table-wrap { overflow-x: auto; margin-top: 36px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+  th {
+    text-align: left; font-family: var(--mono); font-size: 11px;
+    letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted);
+    font-weight: 500; padding: 0 16px 10px 0;
+  }
+  td { padding: 12px 16px 12px 0; border-top: 1px solid var(--line); }
+  td.combo { white-space: nowrap; }
+  td.what { color: var(--muted); }
+  td:first-child { color: var(--ink); font-weight: 500; }
+
+  /* Pricing */
+  .pricing-grid {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 40px; align-items: start; margin-top: 40px;
+  }
+  .price-card {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 14px; padding: 32px;
+    box-shadow: var(--shadow);
+  }
+  .price {
+    font-family: var(--serif); font-size: 46px; font-weight: 700;
+    line-height: 1;
+  }
+  .price-note { color: var(--muted); font-size: 14px; margin: 6px 0 22px; }
+  .includes { list-style: none; margin-bottom: 26px; }
+  .includes li {
+    padding: 7px 0 7px 26px; position: relative;
+    font-size: 14.5px; border-top: 1px solid var(--line);
+  }
+  .includes li:first-child { border-top: none; }
+  .includes li::before {
+    content: "✓"; position: absolute; left: 2px;
+    color: var(--accent); font-weight: 700;
+  }
+  .price-aside p { font-size: 14.5px; color: var(--muted); margin-bottom: 14px; }
+  .price-aside strong { color: var(--ink); }
+
+  /* FAQ */
+  .faq { margin-top: 32px; max-width: 68ch; }
+  .faq details { border-top: 1px solid var(--line); }
+  .faq summary {
+    cursor: pointer; padding: 16px 0; font-weight: 600; font-size: 15.5px;
+    list-style: none; display: flex; justify-content: space-between; gap: 16px;
+  }
+  .faq summary::after { content: "+"; color: var(--accent); font-family: var(--mono); }
+  .faq details[open] summary::after { content: "–"; }
+  .faq details p { padding: 0 0 18px; color: var(--muted); font-size: 14.5px; max-width: 62ch; }
+
+  /* Footer */
+  footer {
+    border-top: 1px solid var(--line);
+    padding: 32px 0 48px;
+    display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+    color: var(--muted); font-size: 13px;
+  }
+  footer .wordmark { font-size: 14px; }
+
+  @media (max-width: 800px) {
+    .hero { grid-template-columns: 1fr; gap: 40px; padding: 48px 0 64px; }
+    .steps, .features { grid-template-columns: 1fr; }
+    .pricing-grid { grid-template-columns: 1fr; }
+    .nav-links a:not(.btn) { display: none; }
+  }
+</style>
+
+<div class="wrap">
+  <nav>
+    <span class="wordmark"><span class="tick">##</span> Marky</span>
+    <div class="nav-links">
+      <a href="#how">How it works</a>
+      <a href="#features">Features</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#faq">FAQ</a>
+      <a class="btn" href="#pricing">Buy — $12</a>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <div class="hero-copy">
+      <p class="eyebrow">A menu-bar app for macOS</p>
+      <h1 class="headline">
+        <span class="md-line">Copy <span class="syntax">**</span>Markdown<span class="syntax">**</span>.</span>
+        <span class="rich-line">Paste <strong>rich text.</strong></span>
+      </h1>
+      <p class="sub">
+        Marky watches your clipboard. The moment you copy Markdown — from
+        ChatGPT, Claude, your notes, anywhere — it quietly becomes formatted
+        rich text, ready to paste into Google&nbsp;Docs, Slack, or Mail.
+        Headings, bold, links, tables. No more asterisks in your documents.
+      </p>
+      <div class="cta-row">
+        <a class="btn btn-lg" href="#pricing">Buy Marky — $12</a>
+        <a class="btn btn-ghost btn-lg" href="https://github.com/sunnymodi/marky/releases" rel="noopener">Download free trial</a>
+      </div>
+      <p class="fine">macOS 15+ · one-time purchase · everything stays on your Mac</p>
+    </div>
+
+    <div class="demo" aria-label="Before and after: raw Markdown becomes rich text">
+      <div>
+        <p class="clip-label">You copy</p>
+        <div class="clip clip-md"><span class="syntax">##</span> Launch checklist
+<span class="syntax">**</span>Owner:<span class="syntax">**</span> Priya · <span class="syntax">**</span>Due:<span class="syntax">**</span> Friday
+
+<span class="syntax">-</span> Finish the <span class="syntax">`</span>v2<span class="syntax">`</span> importer
+<span class="syntax">-</span> Update the <span class="syntax">[</span>docs<span class="syntax">](</span>https://…<span class="syntax">)</span>
+
+<span class="syntax">&gt;</span> Ship it, then rest.</div>
+      </div>
+      <p class="demo-arrow"><span class="glyph">↓</span>&nbsp; Marky converts it in place</p>
+      <div>
+        <p class="clip-label">You paste</p>
+        <div class="clip clip-rich">
+          <h4>Launch checklist</h4>
+          <p><strong>Owner:</strong> Priya · <strong>Due:</strong> Friday</p>
+          <ul>
+            <li>Finish the <code>v2</code> importer</li>
+            <li>Update the <a href="#" onclick="return false">docs</a></li>
+          </ul>
+          <blockquote>Ship it, then rest.</blockquote>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <section id="how">
+    <p class="section-label">How it works</p>
+    <h2>Copy. It converts. Paste.</h2>
+    <p class="section-intro">
+      No window to open, no button to press. Marky sits in your menu bar and
+      recognizes Markdown the instant it lands on your clipboard.
+    </p>
+    <div class="steps">
+      <div class="step">
+        <p class="step-num">1</p>
+        <h3>Copy anything</h3>
+        <p>Grab Markdown from an AI chat, a README, or your notes app with a
+        normal <kbd>⌘C</kbd>. Marky scores the text and only converts what is
+        actually Markdown — URLs, shell commands, and source code pass through untouched.</p>
+      </div>
+      <div class="step">
+        <p class="step-num">2</p>
+        <h3>Marky rewrites the clipboard</h3>
+        <p>The clipboard gets rich text <em>and</em> styled HTML representations —
+        while the plain-text copy keeps your original Markdown, character for
+        character. Nothing is ever destroyed.</p>
+      </div>
+      <div class="step">
+        <p class="step-num">3</p>
+        <h3>Paste anywhere</h3>
+        <p>Rich editors like Google Docs, Slack, Notion, and Mail get formatted
+        text. Terminals and code editors still get your raw Markdown. Every app
+        receives the version it wants.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="features">
+    <p class="section-label">Features</p>
+    <h2>A clipboard that works the way you do</h2>
+    <div class="features">
+      <div class="feature">
+        <span class="glyph">⌥⌘V</span>
+        <h3>Clipboard history</h3>
+        <p>A floating, keyboard-first history window. Arrow through recent
+        clips, hit Return, and the clip pastes straight into the app you came
+        from.</p>
+      </div>
+      <div class="feature">
+        <span class="glyph">txt → md</span>
+        <h3>Non-destructive by design</h3>
+        <p>The plain-text side of the clipboard always keeps your original
+        Markdown. Paste into a code editor and it's exactly what you copied.</p>
+      </div>
+      <div class="feature">
+        <span class="glyph">img → txt</span>
+        <h3>OCR for screenshots</h3>
+        <p>Copied an image? Marky's history can extract its text with
+        on-device recognition — no cloud, no upload.</p>
+      </div>
+      <div class="feature">
+        <span class="glyph">●</span>
+        <h3>Private, on principle</h3>
+        <p>Everything runs locally. History lives in a file on your Mac, and
+        anything a password manager marks as concealed is never recorded.</p>
+      </div>
+      <div class="feature">
+        <span class="glyph">¶</span>
+        <h3>Paste as… anything</h3>
+        <p>From the history window, paste any clip as rich text, raw Markdown,
+        or stripped plain text — whatever the moment calls for.</p>
+      </div>
+      <div class="feature">
+        <span class="glyph">⚙︎</span>
+        <h3>Stays out of the way</h3>
+        <p>Exclude apps, ignore patterns you define, toggle auto-convert with
+        one click. A subtle icon pulse is the only sign Marky did anything.</p>
+      </div>
+    </div>
+
+    <div class="hotkey-table-wrap">
+      <table>
+        <thead>
+          <tr><th scope="col">Action</th><th scope="col">Default shortcut</th><th scope="col">What it does</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Open history</td><td class="combo"><kbd>⌥⌘V</kbd></td><td class="what">Floating clipboard history — pick a clip, it pastes itself</td></tr>
+          <tr><td>Convert to rich text</td><td class="combo"><kbd>⌥⌘M</kbd></td><td class="what">Force-convert whatever is on the clipboard right now</td></tr>
+          <tr><td>Restore original</td><td class="combo"><kbd>⌥⇧⌘M</kbd></td><td class="what">Put the untouched Markdown back</td></tr>
+          <tr><td>Copy as plain text</td><td class="combo"><kbd>⌥⌘P</kbd></td><td class="what">Strip all formatting from any clipboard content</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="pricing">
+    <p class="section-label">Pricing</p>
+    <h2>Pay once. That's it.</h2>
+    <div class="pricing-grid">
+      <div class="price-card">
+        <p class="price">$12</p>
+        <p class="price-note">One-time purchase · no subscription</p>
+        <ul class="includes">
+          <li>Automatic Markdown → rich text conversion</li>
+          <li>Keyboard-first clipboard history with paste-on-pick</li>
+          <li>On-device OCR for copied images</li>
+          <li>All hotkeys, settings, and exclusions</li>
+          <li>Free updates for all 1.x releases</li>
+          <li>Use on all Macs you own</li>
+        </ul>
+        <a class="btn btn-lg" href="https://YOURSTORE.lemonsqueezy.com/buy/PRODUCT_ID">Buy Marky — $12</a>
+      </div>
+      <div class="price-aside">
+        <p><strong>Try before you buy.</strong> The trial is the full app —
+        take a week with it and see whether your pastes get better.</p>
+        <p><strong>Instant delivery.</strong> Checkout is handled by
+        Lemon&nbsp;Squeezy. You'll get a download link and license key by email
+        the moment payment clears, with VAT and sales tax handled for you.</p>
+        <p><strong>14-day refunds.</strong> If Marky isn't for you, reply to
+        your receipt and you'll get your money back. No forms, no questions.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="faq">
+    <p class="section-label">FAQ</p>
+    <h2>Questions, answered</h2>
+    <div class="faq">
+      <details>
+        <summary>Does my clipboard ever leave my Mac?</summary>
+        <p>No. Detection, conversion, history, and OCR all run on-device. Marky
+        makes no network requests, and your history is a local file you can
+        delete at any time.</p>
+      </details>
+      <details>
+        <summary>Will it mangle things that aren't Markdown?</summary>
+        <p>Marky scores each copy before touching it. Bare URLs, shell
+        commands, source code, and very long texts are deliberately left
+        alone. And even when it does convert, the plain-text version of the
+        clipboard keeps your original characters — so a "wrong" conversion
+        never loses data.</p>
+      </details>
+      <details>
+        <summary>What about passwords and sensitive copies?</summary>
+        <p>Anything marked concealed or transient by password managers (the
+        nspasteboard.org convention used by 1Password and friends) is skipped
+        entirely — never converted, never recorded in history.</p>
+      </details>
+      <details>
+        <summary>Why does Marky ask for the Accessibility permission?</summary>
+        <p>Only the history window's paste-on-pick uses it, to press ⌘V into
+        the app you came from. Decline it and everything else still works —
+        picking a clip simply copies it for you to paste yourself.</p>
+      </details>
+      <details>
+        <summary>What does it run on?</summary>
+        <p>macOS 15 Sequoia or later. It's a tiny menu-bar app — no dock icon,
+        no login nags, a few megabytes of memory.</p>
+      </details>
+    </div>
+  </section>
+
+  <footer>
+    <span class="wordmark"><span class="tick">##</span> Marky</span>
+    <span>© 2026 Sunny Modi · <a href="mailto:sunnymodi21@proton.me">Support</a> · <a href="#">Privacy</a></span>
+  </footer>
+</div>
+</body>
+</html>
