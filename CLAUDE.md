@@ -16,17 +16,23 @@ Markdown as rich text, with a CopyClip-style clipboard history.
   - `com.sunnymodi.marky` — marker type so the monitor never reprocesses its own writes
 - Clipboard history records text and images (PNG; TIFF screenshots converted), persists to
   `~/Library/Application Support/Marky/history.json`, skips content with nspasteboard.org
-  concealed/transient types (password managers).
+  concealed/transient types (password managers). Image PNGs live as individual files in
+  `Marky/images/`; only `ImageMeta` (dimensions, byte count, SHA-256) stays in memory and
+  bytes load lazily (`pngData(for:)`). Dedup compares hashes, never blobs. History file IO
+  runs on a serial background queue (`ioQueue`); the JSON save is debounced 500ms and
+  flushed synchronously on quit/clear. Text entries get `isMarkdown` computed once at
+  record/load time — the UI never re-runs detection per render.
 - Image history entries have an OCR action (Vision `VNRecognizeTextRequest`, on-device)
   that copies recognized text to the clipboard.
 - The **open-history hotkey opens a standalone floating window** (`HistoryPanelController`,
   a `NSPanel`), separate from the menu-bar dropdown. Picking a clip restores it to the
   clipboard and — when "Paste on click" is on and Accessibility is granted — reactivates
   the previously frontmost app and synthesizes ⌘V so the clip lands in the focused field.
-- `MenuContentView` is shared by both surfaces. The auto-convert toggle and the "Paste as"
-  (Rich Text / Markdown / Plain Text) action row render **only in the overlay** (gated on
-  `onPick != nil`); the menu-bar dropdown shows just search + history + footer. The "Paste
-  as" buttons rewrite the clipboard then paste it via `onPasteCurrent`.
+- `MenuContentView` is shared by both surfaces, selected by an explicit
+  `MenuSurface` enum (`.menuDropdown` / `.overlay`). The auto-convert toggle and the
+  "Paste as" (Rich Text / Markdown / Plain Text) action row render **only in the overlay**;
+  the menu-bar dropdown shows just search + history + footer. The "Paste as" buttons
+  rewrite the clipboard (via `ClipboardActions`) then paste it via `onPasteCurrent`.
 - `NSPanel.collectionBehavior`: `.canJoinAllSpaces` and `.moveToActiveSpace` are mutually
   exclusive — setting both raises an NSException (which a Carbon hotkey callback silently
   swallows, so the window just never appears). Use one.
@@ -47,7 +53,9 @@ Markdown as rich text, with a CopyClip-style clipboard history.
   directly on the `MenuBarExtra` scene (it extends that concrete type, not `some Scene`).
 - **Marker type before everything.** Any pasteboard write Marky makes must include the
   `com.sunnymodi.marky` marker and call `markOwnWrite()` to register the changeCount,
-  otherwise the monitor loops on its own output.
+  otherwise the monitor loops on its own output. All pasteboard IO goes through
+  `PasteboardService`, which owns the marker constant, the write methods (which mark
+  automatically), and the ignored-changeCount set the monitor consumes.
 - **Detection sensitivity UI was removed.** `MarkyCore.Sensitivity` (low/normal/high
   thresholds) still exists, but the app always uses `ConvertConfig()` defaults (normal,
   400-line safety valve). Don't resurface the picker without being asked.
@@ -58,22 +66,28 @@ Markdown as rich text, with a CopyClip-style clipboard history.
 
 ```
 Sources/
-├── MarkyCore/            # pure logic, shared by app + CLI + tests
-│   ├── MarkdownConverter.swift   # cmark-gfm C API -> HTML + CSS -> NSAttributedString -> RTF
+├── MarkyCore/            # pure logic, shared by app + CLI + tests (no NSApp/appearance lookups)
+│   ├── MarkdownConverter.swift   # cmark-gfm C API -> HTML + CSS -> NSAttributedString -> RTF; theme is caller-supplied (defaults .light)
 │   ├── MarkdownDetector.swift    # score-based heuristics + negative gates
 │   └── ConvertConfig.swift       # Sensitivity enum, maxLines safety valve
 ├── Marky/                # menu-bar app
-│   ├── MarkyApp.swift            # MenuBarExtra (.window style), status icon pulse
-│   ├── ClipboardMonitor.swift    # polling loop, marker handling, pasteboard IO
-│   ├── ClipboardHistory.swift    # ClipboardHistoryStore: record/search/restore/persist
+│   ├── MarkyApp.swift            # composition root: wires services; MenuBarExtra (.window style), status icon pulse
+│   ├── ClipboardMonitor.swift    # polling loop + convert/capture orchestration (no direct pasteboard IO)
+│   ├── PasteboardService.swift   # ALL pasteboard reads/writes, marker protocol, markOwnWrite/ignored counts
+│   ├── ClipboardPolicy.swift     # skip rules: sensitive types, excluded apps (injectable frontmost provider), cached ignore regexes
+│   ├── ClipboardActions.swift    # user-triggered rewrites (rich/original/plain), shared by hotkeys + UI buttons
+│   ├── ClipboardHistory.swift    # ClipboardHistoryStore: record/search/restore; file-backed lazy images; background IO
 │   ├── ImageTextRecognizer.swift # Vision OCR for image clippings
-│   ├── HotkeyManager.swift       # KeyboardShortcuts names + handlers (clipboard-only)
+│   ├── HotkeyManager.swift       # KeyboardShortcuts names + registration; dispatches to ClipboardActions
 │   ├── HistoryPanelController.swift # standalone floating history window + paste flow
 │   ├── PasteService.swift        # CGEvent ⌘V (Accessibility-gated)
 │   ├── AccessibilityPermissionManager.swift # AXIsProcessTrusted state + prompt
-│   ├── MenuContentView.swift     # search bar, history list, convert actions, footer; onPick hook
+│   ├── MenuContentView.swift     # search bar, history list, convert actions, footer; MenuSurface + onPick hook
 │   ├── SettingsView.swift        # General / History / Shortcuts / About panes
-│   └── AppSettings.swift         # UserDefaults-backed @Published settings
+│   ├── AppSettings.swift         # UserDefaults-backed @Published settings
+│   ├── ConvertTheme+System.swift # resolves light/dark ConvertTheme from NSApp appearance
+│   ├── String+Ellipsize.swift    # middle-ellipsize helper
+│   └── Bundle+Version.swift      # shortVersion/buildVersion
 └── MarkyCLI/main.swift   # pbpaste | marky -, --html, --detect
 ```
 
@@ -128,8 +142,8 @@ selected row scrolled into view.
 
 ```sh
 swift build                       # debug build
-swift test                        # 49 tests, 6 suites (Swift Testing, @Test/#expect)
-./Scripts/package_app.sh release  # SPM binary -> Marky.app (stable-signed, copies *.bundle)
+swift test                        # 58 tests, 7 suites (Swift Testing, @Test/#expect)
+./Scripts/package_app.sh release [notarize]  # SPM binary -> Marky.app (stable-signed, copies *.bundle); notarize also staples + emits dist/Marky-<ver>.zip (creds from gitignored .env)
 ./Scripts/compile_and_run.sh      # kill, build, test, package debug, relaunch
 swift run MarkyCLI --detect -     # CLI: score stdin; also --html, file args, clipboard default
 ```

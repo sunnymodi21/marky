@@ -12,8 +12,11 @@ import Testing
         let settings = AppSettings(defaults: defaults)
 
         let pasteboard = NSPasteboard(name: NSPasteboard.Name("marky-tests-\(UUID().uuidString)"))
+        let service = PasteboardService(pasteboard: pasteboard)
+        let policy = ClipboardPolicy(settings: settings, frontmostBundleID: { nil })
         let history = ClipboardHistoryStore(settings: settings, storageURL: nil)
-        let monitor = ClipboardMonitor(settings: settings, pasteboard: pasteboard, history: history)
+        let monitor = ClipboardMonitor(
+            settings: settings, pasteboardService: service, policy: policy, history: history)
         return (monitor, history, pasteboard, settings)
     }
 

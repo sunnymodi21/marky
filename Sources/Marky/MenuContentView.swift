@@ -2,22 +2,33 @@ import KeyboardShortcuts
 import MarkyCore
 import SwiftUI
 
+/// Which host the shared content view is rendering in. The two surfaces differ
+/// in what a pick does (copy-and-close vs paste into the prior app) and whether
+/// the convert/"Paste as" controls are shown (overlay only).
+enum MenuSurface {
+    /// The menu-bar dropdown: picking an entry copies it and closes the panel.
+    case menuDropdown
+    /// The standalone floating history window: picking an entry pastes it.
+    case overlay
+}
+
 /// Window-style menu bar panel: search bar pinned on top, history list below,
 /// then convert actions and settings. (.menu style can't host a TextField.)
 struct MenuContentView: View {
     @ObservedObject var settings: AppSettings
     @ObservedObject var monitor: ClipboardMonitor
     @ObservedObject var history: ClipboardHistoryStore
-    let hotkeys: HotkeyManager
+    let actions: ClipboardActions
     @Binding var isPresented: Bool
 
-    /// Set by the standalone history window: invoked after a clip is restored to
-    /// the clipboard so the host can paste it (⌘V) into the previously focused app.
-    /// When nil (menu-bar panel), copy shows a brief checkmark and closes the panel.
+    var surface: MenuSurface = .menuDropdown
+
+    /// Overlay only: invoked after a clip is restored to the clipboard so the
+    /// host can paste it (⌘V) into the previously focused app.
     var onPick: ((ClipboardEntry) -> Void)?
 
-    /// Set by the standalone window: pastes whatever is currently on the clipboard
-    /// into the previously focused app. Used by the "Paste as" format buttons after
+    /// Overlay only: pastes whatever is currently on the clipboard into the
+    /// previously focused app. Used by the "Paste as" format buttons after
     /// they rewrite the clipboard.
     var onPasteCurrent: (() -> Void)?
 
@@ -83,9 +94,9 @@ struct MenuContentView: View {
                 self.historyList
             }
 
-            // Convert/paste actions live only in the standalone paste overlay
-            // (onPick set), not the menu-bar dropdown.
-            if self.onPick != nil {
+            // Convert/paste actions live only in the standalone paste overlay,
+            // not the menu-bar dropdown.
+            if self.surface == .overlay {
                 Divider()
                 self.controls
             }
@@ -197,7 +208,7 @@ struct MenuContentView: View {
                                 isCopied: self.copiedEntryID == entry.id,
                                 isSelected: self.selectedIndex == index,
                                 isPinned: entry.pinned,
-                                isMarkdown: self.isMarkdownEntry(entry),
+                                isMarkdown: entry.isMarkdown,
                                 action: { self.copy(entry) },
                                 onCopyText: self.isImage(entry) ? { self.copyTextFromImage(entry) } : nil,
                                 onCopyRich: self.fullText(for: entry) != nil ? { self.copyAsRichText(entry) } : nil,
@@ -233,20 +244,20 @@ struct MenuContentView: View {
     }
 
     private func copy(_ entry: ClipboardEntry) {
-        // Standalone window: place the clip on the clipboard, then hand off to the
-        // host to paste into the prior app. When auto-convert is on and the clip is
+        // Overlay: place the clip on the clipboard, then hand off to the host to
+        // paste into the prior app. When auto-convert is on and the clip is
         // Markdown, paste it as rich text; otherwise paste it verbatim.
-        if let onPick = self.onPick {
+        if self.surface == .overlay {
             if self.settings.autoConvertEnabled,
                case let .text(text) = entry.content,
-               self.isMarkdownEntry(entry),
-               self.monitor.convertTextToRichText(text)
+               entry.isMarkdown,
+               self.actions.convertTextToRichText(text)
             {
                 // convertTextToRichText wrote rich text to the clipboard (and marked it).
             } else {
                 self.history.restore(entry, to: .general)
             }
-            onPick(entry)
+            self.onPick?(entry)
             return
         }
         self.history.restore(entry, to: .general)
@@ -301,12 +312,6 @@ struct MenuContentView: View {
         return false
     }
 
-    /// True when the entry's text scores as Markdown (eligible for rich-text conversion).
-    private func isMarkdownEntry(_ entry: ClipboardEntry) -> Bool {
-        guard case let .text(text) = entry.content else { return false }
-        return MarkdownDetector().isMarkdown(text, config: self.settings.convertConfig)
-    }
-
     /// Full text of a text entry for the expand/preview, or nil for images.
     private func fullText(for entry: ClipboardEntry) -> String? {
         if case let .text(text) = entry.content { return text }
@@ -343,7 +348,9 @@ struct MenuContentView: View {
 
     /// OCRs an image clipping (Vision, on-device) and copies the recognized text.
     private func copyTextFromImage(_ entry: ClipboardEntry) {
-        guard case let .image(pngData) = entry.content, self.recognizingEntryID == nil else { return }
+        guard self.recognizingEntryID == nil,
+              let pngData = self.history.pngData(for: entry)
+        else { return }
         self.recognizingEntryID = entry.id
 
         Task {
@@ -352,7 +359,7 @@ struct MenuContentView: View {
             guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 return
             }
-            self.monitor.writePlainText(text)
+            self.actions.writePlainText(text)
             self.history.recordText(text)
             self.isPresented = false
         }
@@ -361,7 +368,7 @@ struct MenuContentView: View {
     /// Converts a text history entry to rich text and writes it to the clipboard.
     private func copyAsRichText(_ entry: ClipboardEntry) {
         guard case let .text(text) = entry.content else { return }
-        if self.monitor.convertTextToRichText(text) {
+        if self.actions.convertTextToRichText(text) {
             self.isPresented = false
         }
     }
@@ -390,7 +397,7 @@ struct MenuContentView: View {
 
             HStack(spacing: 6) {
                 Button {
-                    self.hotkeys.convertToRichTextNow()
+                    self.actions.convertToRichText()
                     self.pasteCurrent()
                 } label: {
                     Label("Rich Text", systemImage: "doc.richtext")
@@ -399,7 +406,7 @@ struct MenuContentView: View {
                 .help("Paste the clipboard Markdown as formatted rich text")
 
                 Button {
-                    self.hotkeys.restoreOriginalNow()
+                    self.actions.restoreOriginal()
                     self.pasteCurrent()
                 } label: {
                     Label("Markdown", systemImage: "doc.plaintext")
@@ -408,7 +415,7 @@ struct MenuContentView: View {
                 .help("Paste the original Markdown text")
 
                 Button {
-                    self.hotkeys.copyPlainTextNow()
+                    self.actions.copyPlainText()
                     self.pasteCurrent()
                 } label: {
                     Label("Plain Text", systemImage: "doc.text")
@@ -460,12 +467,6 @@ struct MenuContentView: View {
 }
 
 // MARK: - History row
-
-private extension Bundle {
-    var shortVersion: String {
-        (self.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "dev"
-    }
-}
 
 private struct HistoryRow: View {
     let title: String

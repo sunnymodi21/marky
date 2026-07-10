@@ -1,9 +1,24 @@
 import AppKit
+import CryptoKit
 import Foundation
+import MarkyCore
+import os
+
+private let historyLogger = Logger(subsystem: "com.sunnymodi.marky", category: "history")
+
+/// Lightweight description of a stored image; the PNG bytes themselves live on
+/// disk (or in the in-memory fallback) and are loaded lazily on demand.
+struct ImageMeta: Equatable {
+    let pixelWidth: Int
+    let pixelHeight: Int
+    let byteCount: Int
+    /// SHA-256 of the PNG data; used for dedup instead of comparing raw bytes.
+    let contentHash: String
+}
 
 enum ClipboardContent: Equatable {
     case text(String)
-    case image(pngData: Data)
+    case image(ImageMeta)
 }
 
 struct ClipboardEntry: Identifiable, Equatable {
@@ -11,26 +26,47 @@ struct ClipboardEntry: Identifiable, Equatable {
     let date: Date
     let content: ClipboardContent
     var pinned: Bool = false
+    /// Whether the text scores as Markdown, computed once at record time so the
+    /// UI never re-runs detection per render. Always false for images.
+    var isMarkdown: Bool = false
 }
 
 /// CopyClip-style clipboard history: most recent first, click to copy back.
 /// Records both text and images, persists across launches.
-/// Images are stored as individual PNG files (not base64 in JSON) for efficiency.
+/// Image PNGs are stored as individual files and loaded lazily — only small
+/// metadata is kept in memory. File IO runs on a background queue.
 @MainActor
 final class ClipboardHistoryStore: ObservableObject {
     @Published private(set) var entries: [ClipboardEntry] = []
 
     private let settings: AppSettings
+    private let detector = MarkdownDetector()
     private let storageURL: URL?
     private let imageDirectory: URL?
+
+    /// Serializes all file writes/deletes so a delete can never race a pending write.
+    private let ioQueue = DispatchQueue(label: "com.sunnymodi.marky.history-io", qos: .utility)
+
     private let thumbnailCache: NSCache<NSUUID, NSImage> = {
         let cache = NSCache<NSUUID, NSImage>()
         cache.countLimit = 30
         return cache
     }()
+
+    /// Recently touched PNG bytes, so scrolling doesn't re-read files constantly.
+    private let imageDataCache: NSCache<NSUUID, NSData> = {
+        let cache = NSCache<NSUUID, NSData>()
+        cache.totalCostLimit = 50 * 1024 * 1024
+        return cache
+    }()
+
+    /// Backing bytes when there is no storage directory (memory-only stores, tests).
+    /// A plain dictionary, not NSCache: nothing else retains these bytes.
+    private var inMemoryImages: [UUID: Data] = [:]
+
     private var pendingSave: DispatchWorkItem?
 
-    /// Skip images larger than this (huge screenshots would bloat the history file).
+    /// Skip images larger than this (huge screenshots would bloat the history).
     static let maxImageBytes = 10 * 1024 * 1024
 
     init(settings: AppSettings, storageURL: URL? = ClipboardHistoryStore.defaultStorageURL()) {
@@ -38,7 +74,11 @@ final class ClipboardHistoryStore: ObservableObject {
         self.storageURL = storageURL
         self.imageDirectory = storageURL?.deletingLastPathComponent().appendingPathComponent("images", isDirectory: true)
         if let dir = self.imageDirectory {
-            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            do {
+                try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            } catch {
+                historyLogger.error("Failed to create image directory: \(error.localizedDescription)")
+            }
         }
         self.load()
 
@@ -93,25 +133,42 @@ final class ClipboardHistoryStore: ObservableObject {
 
     func recordText(_ text: String) {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        self.insert(.text(text))
+        let isMarkdown = self.detector.isMarkdown(text, config: self.settings.convertConfig)
+        self.insert(.text(text), isMarkdown: isMarkdown, pngData: nil)
     }
 
     func recordImage(pngData: Data) {
         guard !pngData.isEmpty, pngData.count <= Self.maxImageBytes else { return }
-        self.insert(.image(pngData: pngData))
+        self.insert(.image(Self.imageMeta(for: pngData)), isMarkdown: false, pngData: pngData)
     }
 
-    private func insert(_ content: ClipboardContent) {
+    private static func imageMeta(for pngData: Data) -> ImageMeta {
+        let rep = NSBitmapImageRep(data: pngData)
+        let digest = SHA256.hash(data: pngData)
+        return ImageMeta(
+            pixelWidth: rep?.pixelsWide ?? 0,
+            pixelHeight: rep?.pixelsHigh ?? 0,
+            byteCount: pngData.count,
+            contentHash: digest.map { String(format: "%02x", $0) }.joined())
+    }
+
+    private func insert(_ content: ClipboardContent, isMarkdown: Bool, pngData: Data?) {
         // Re-copied content moves to the top instead of duplicating.
+        // Images compare by metadata (hash), so no byte blobs are compared or loaded.
         var preservedPin = false
         if let existing = self.entries.firstIndex(where: { $0.content == content }) {
             preservedPin = self.entries[existing].pinned
             let removed = self.entries.remove(at: existing)
-            self.deleteImageFile(for: removed.id)
+            self.discardImageStorage(for: removed.id)
         }
-        let entry = ClipboardEntry(id: UUID(), date: Date(), content: content, pinned: preservedPin)
-        if case .image = content {
-            self.writeImageFile(for: entry)
+        let entry = ClipboardEntry(
+            id: UUID(),
+            date: Date(),
+            content: content,
+            pinned: preservedPin,
+            isMarkdown: isMarkdown)
+        if let pngData {
+            self.storeImageData(pngData, for: entry.id)
         }
         self.entries.insert(entry, at: 0)
 
@@ -126,8 +183,7 @@ final class ClipboardHistoryStore: ObservableObject {
             let removed = Array(self.entries.suffix(surplus))
             self.entries.removeLast(surplus)
             for entry in removed {
-                self.deleteImageFile(for: entry.id)
-                self.thumbnailCache.removeObject(forKey: entry.id as NSUUID)
+                self.discardImageStorage(for: entry.id)
             }
         }
     }
@@ -146,17 +202,15 @@ final class ClipboardHistoryStore: ObservableObject {
 
     func delete(_ entry: ClipboardEntry) {
         self.entries.removeAll { $0.id == entry.id }
-        self.deleteImageFile(for: entry.id)
-        self.thumbnailCache.removeObject(forKey: entry.id as NSUUID)
+        self.discardImageStorage(for: entry.id)
         self.save()
     }
 
     func clear() {
         for entry in self.entries {
-            self.deleteImageFile(for: entry.id)
+            self.discardImageStorage(for: entry.id)
         }
         self.entries.removeAll()
-        self.thumbnailCache.removeAllObjects()
         self.saveNow()
     }
 
@@ -166,16 +220,40 @@ final class ClipboardHistoryStore: ObservableObject {
     /// change like any other copy, so the entry moves to the top of the history
     /// and markdown text gets auto-converted as usual.
     func restore(_ entry: ClipboardEntry, to pasteboard: NSPasteboard) {
-        pasteboard.clearContents()
         switch entry.content {
         case let .text(text):
+            pasteboard.clearContents()
             pasteboard.setString(text, forType: .string)
-        case let .image(pngData):
+        case .image:
+            guard let pngData = self.pngData(for: entry) else {
+                historyLogger.error("Missing image data for history entry \(entry.id)")
+                return
+            }
+            pasteboard.clearContents()
             pasteboard.setData(pngData, forType: .png)
             if let tiff = NSBitmapImageRep(data: pngData)?.tiffRepresentation {
                 pasteboard.setData(tiff, forType: .tiff)
             }
         }
+    }
+
+    // MARK: - Image data access
+
+    /// The PNG bytes for an image entry, loaded lazily from cache, disk, or the
+    /// in-memory fallback.
+    func pngData(for entry: ClipboardEntry) -> Data? {
+        guard case .image = entry.content else { return nil }
+        if let data = self.inMemoryImages[entry.id] { return data }
+        let key = entry.id as NSUUID
+        if let cached = self.imageDataCache.object(forKey: key) { return cached as Data }
+        guard let dir = self.imageDirectory else { return nil }
+        let fileURL = dir.appendingPathComponent(Self.imageFilename(for: entry.id))
+        guard let data = try? Data(contentsOf: fileURL) else {
+            historyLogger.error("Failed to read image file for history entry \(entry.id)")
+            return nil
+        }
+        self.imageDataCache.setObject(data as NSData, forKey: key, cost: data.count)
+        return data
     }
 
     // MARK: - Display helpers
@@ -186,20 +264,19 @@ final class ClipboardHistoryStore: ObservableObject {
             let firstLine = text
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 .replacingOccurrences(of: "\n", with: " ")
-            return ClipboardMonitor.ellipsize(firstLine, limit: 60)
-        case let .image(pngData):
-            if let rep = NSBitmapImageRep(data: pngData) {
-                return "Image (\(rep.pixelsWide) × \(rep.pixelsHigh))"
-            }
-            return "Image"
+            return firstLine.ellipsized(limit: 60)
+        case let .image(meta):
+            guard meta.pixelWidth > 0, meta.pixelHeight > 0 else { return "Image" }
+            return "Image (\(meta.pixelWidth) × \(meta.pixelHeight))"
         }
     }
 
     func thumbnail(for entry: ClipboardEntry) -> NSImage? {
-        guard case let .image(pngData) = entry.content else { return nil }
+        guard case .image = entry.content else { return nil }
         let key = entry.id as NSUUID
         if let cached = self.thumbnailCache.object(forKey: key) { return cached }
-        guard let image = NSImage(data: pngData), image.size.width > 0, image.size.height > 0
+        guard let pngData = self.pngData(for: entry),
+              let image = NSImage(data: pngData), image.size.width > 0, image.size.height > 0
         else { return nil }
 
         let maxSize = NSSize(width: 120, height: 70)
@@ -222,37 +299,64 @@ final class ClipboardHistoryStore: ObservableObject {
         let date: Date
         let text: String?
         let pinned: Bool?
-        /// New format: filename of image stored in the images directory.
+        /// Filename of the PNG stored in the images directory.
         let imageFilename: String?
+        let imageWidth: Int?
+        let imageHeight: Int?
+        let imageByteCount: Int?
+        let imageHash: String?
         /// Legacy format: base64-encoded image data inline in JSON.
         /// Kept for migration; new writes always use imageFilename.
         let imageBase64: String?
     }
 
     private func load() {
-        guard let url = self.storageURL,
-              let data = try? Data(contentsOf: url),
-              let stored = try? JSONDecoder().decode([StoredEntry].self, from: data)
-        else { return }
+        guard let url = self.storageURL else { return }
+        guard let data = try? Data(contentsOf: url) else { return }
+        let stored: [StoredEntry]
+        do {
+            stored = try JSONDecoder().decode([StoredEntry].self, from: data)
+        } catch {
+            historyLogger.error("Failed to decode history file: \(error.localizedDescription)")
+            return
+        }
 
         var needsResave = false
         self.entries = stored.compactMap { item in
             let isPinned = item.pinned ?? false
             if let text = item.text {
-                return ClipboardEntry(id: item.id, date: item.date, content: .text(text), pinned: isPinned)
+                // Recompute rather than persist the flag so detector improvements
+                // apply to old entries.
+                let isMarkdown = self.detector.isMarkdown(text, config: self.settings.convertConfig)
+                return ClipboardEntry(
+                    id: item.id, date: item.date, content: .text(text),
+                    pinned: isPinned, isMarkdown: isMarkdown)
             }
-            // New format: load from file.
             if let filename = item.imageFilename, let dir = self.imageDirectory {
                 let fileURL = dir.appendingPathComponent(filename)
-                if let pngData = try? Data(contentsOf: fileURL) {
-                    return ClipboardEntry(id: item.id, date: item.date, content: .image(pngData: pngData), pinned: isPinned)
+                // Metadata present: the bytes stay on disk until actually needed.
+                if let width = item.imageWidth, let height = item.imageHeight,
+                   let byteCount = item.imageByteCount, let hash = item.imageHash
+                {
+                    guard FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
+                    let meta = ImageMeta(
+                        pixelWidth: width, pixelHeight: height,
+                        byteCount: byteCount, contentHash: hash)
+                    return ClipboardEntry(id: item.id, date: item.date, content: .image(meta), pinned: isPinned)
                 }
-                return nil
+                // Older file-backed format without metadata: read once to compute it.
+                guard let pngData = try? Data(contentsOf: fileURL) else { return nil }
+                needsResave = true
+                return ClipboardEntry(
+                    id: item.id, date: item.date,
+                    content: .image(Self.imageMeta(for: pngData)), pinned: isPinned)
             }
             // Legacy format: migrate base64 to file storage.
             if let base64 = item.imageBase64, let pngData = Data(base64Encoded: base64) {
-                let entry = ClipboardEntry(id: item.id, date: item.date, content: .image(pngData: pngData), pinned: isPinned)
-                self.writeImageFile(for: entry)
+                let entry = ClipboardEntry(
+                    id: item.id, date: item.date,
+                    content: .image(Self.imageMeta(for: pngData)), pinned: isPinned)
+                self.storeImageData(pngData, for: entry.id)
                 needsResave = true
                 return entry
             }
@@ -266,12 +370,12 @@ final class ClipboardHistoryStore: ObservableObject {
     }
 
     /// Debounced save: coalesces rapid writes (e.g. multiple copies in quick succession)
-    /// into a single JSON write after 500ms of quiet. Image files are written immediately
-    /// in `writeImageFile`; only the JSON metadata is debounced.
+    /// into a single JSON write after 500ms of quiet. Image files are written as they
+    /// are recorded; only the JSON metadata is debounced.
     private func save() {
         self.pendingSave?.cancel()
         let work = DispatchWorkItem { [weak self] in
-            self?.performSave()
+            self?.performSave(synchronous: false)
         }
         self.pendingSave = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
@@ -281,30 +385,51 @@ final class ClipboardHistoryStore: ObservableObject {
     private func saveNow() {
         self.pendingSave?.cancel()
         self.pendingSave = nil
-        self.performSave()
+        self.performSave(synchronous: true)
     }
 
-    private func performSave() {
+    /// Encodes on the main actor (entries are main-actor state), writes on the IO
+    /// queue. `synchronous` waits for the write — used at termination and in tests.
+    private func performSave(synchronous: Bool) {
         guard let url = self.storageURL else { return }
         let stored = self.entries.map { entry -> StoredEntry in
             switch entry.content {
             case let .text(text):
-                StoredEntry(id: entry.id, date: entry.date, text: text, pinned: entry.pinned, imageFilename: nil, imageBase64: nil)
-            case .image:
                 StoredEntry(
-                    id: entry.id,
-                    date: entry.date,
-                    text: nil,
-                    pinned: entry.pinned,
+                    id: entry.id, date: entry.date, text: text, pinned: entry.pinned,
+                    imageFilename: nil, imageWidth: nil, imageHeight: nil,
+                    imageByteCount: nil, imageHash: nil, imageBase64: nil)
+            case let .image(meta):
+                StoredEntry(
+                    id: entry.id, date: entry.date, text: nil, pinned: entry.pinned,
                     imageFilename: Self.imageFilename(for: entry.id),
+                    imageWidth: meta.pixelWidth, imageHeight: meta.pixelHeight,
+                    imageByteCount: meta.byteCount, imageHash: meta.contentHash,
                     imageBase64: nil)
             }
         }
-        guard let data = try? JSONEncoder().encode(stored) else { return }
-        try? FileManager.default.createDirectory(
-            at: url.deletingLastPathComponent(),
-            withIntermediateDirectories: true)
-        try? data.write(to: url, options: .atomic)
+        let data: Data
+        do {
+            data = try JSONEncoder().encode(stored)
+        } catch {
+            historyLogger.error("Failed to encode history: \(error.localizedDescription)")
+            return
+        }
+        let write: @Sendable () -> Void = {
+            do {
+                try FileManager.default.createDirectory(
+                    at: url.deletingLastPathComponent(),
+                    withIntermediateDirectories: true)
+                try data.write(to: url, options: .atomic)
+            } catch {
+                historyLogger.error("Failed to write history file: \(error.localizedDescription)")
+            }
+        }
+        if synchronous {
+            self.ioQueue.sync(execute: write)
+        } else {
+            self.ioQueue.async(execute: write)
+        }
     }
 
     /// Flushes any pending debounced save. Call on app termination.
@@ -318,17 +443,33 @@ final class ClipboardHistoryStore: ObservableObject {
         "\(id.uuidString).png"
     }
 
-    private func writeImageFile(for entry: ClipboardEntry) {
-        guard let dir = self.imageDirectory,
-              case let .image(pngData) = entry.content
-        else { return }
-        let fileURL = dir.appendingPathComponent(Self.imageFilename(for: entry.id))
-        try? pngData.write(to: fileURL, options: .atomic)
+    /// Persists PNG bytes for a new entry: to disk (off the main thread) when a
+    /// storage directory exists, otherwise to the in-memory fallback.
+    private func storeImageData(_ pngData: Data, for id: UUID) {
+        guard let dir = self.imageDirectory else {
+            self.inMemoryImages[id] = pngData
+            return
+        }
+        self.imageDataCache.setObject(pngData as NSData, forKey: id as NSUUID, cost: pngData.count)
+        let fileURL = dir.appendingPathComponent(Self.imageFilename(for: id))
+        self.ioQueue.async {
+            do {
+                try pngData.write(to: fileURL, options: .atomic)
+            } catch {
+                historyLogger.error("Failed to write image file: \(error.localizedDescription)")
+            }
+        }
     }
 
-    private func deleteImageFile(for id: UUID) {
+    /// Removes every stored copy of an entry's image bytes (file, caches, fallback).
+    private func discardImageStorage(for id: UUID) {
+        self.inMemoryImages[id] = nil
+        self.thumbnailCache.removeObject(forKey: id as NSUUID)
+        self.imageDataCache.removeObject(forKey: id as NSUUID)
         guard let dir = self.imageDirectory else { return }
         let fileURL = dir.appendingPathComponent(Self.imageFilename(for: id))
-        try? FileManager.default.removeItem(at: fileURL)
+        self.ioQueue.async {
+            try? FileManager.default.removeItem(at: fileURL)
+        }
     }
 }

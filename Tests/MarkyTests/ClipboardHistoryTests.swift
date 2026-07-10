@@ -209,6 +209,44 @@ import Testing
         #expect(store.search("   ").count == 2)
     }
 
+    @Test func marksMarkdownTextAtRecordTime() {
+        let store = ClipboardHistoryStore(settings: self.makeSettings(), storageURL: nil)
+        store.recordText("# Title\n\n**bold** text\n\n- a\n- b")
+        store.recordText("plain sentence, no markup")
+
+        #expect(store.entries.first { $0.content == .text("# Title\n\n**bold** text\n\n- a\n- b") }?.isMarkdown == true)
+        #expect(store.entries.first { $0.content == .text("plain sentence, no markup") }?.isMarkdown == false)
+    }
+
+    @Test func dedupesRecopiedImagesByHash() {
+        let store = ClipboardHistoryStore(settings: self.makeSettings(), storageURL: nil)
+        let png = self.makePNG()
+        store.recordImage(pngData: png)
+        store.recordText("in between")
+        store.recordImage(pngData: png)
+
+        #expect(store.entries.count == 2)
+        if case .image = store.entries[0].content {} else {
+            Issue.record("expected the re-copied image at the top")
+        }
+    }
+
+    @Test func imageBytesRoundTripAcrossReload() {
+        let settings = self.makeSettings()
+        let url = self.tempStorageURL()
+        let png = self.makePNG(width: 8, height: 6)
+
+        let store = ClipboardHistoryStore(settings: settings, storageURL: url)
+        store.recordImage(pngData: png)
+        store.flushPendingSave()
+
+        let reloaded = ClipboardHistoryStore(settings: settings, storageURL: url)
+        #expect(reloaded.entries.count == 1)
+        #expect(reloaded.pngData(for: reloaded.entries[0]) == png)
+        #expect(reloaded.title(for: reloaded.entries[0]) == "Image (8 × 6)")
+        #expect(reloaded.thumbnail(for: reloaded.entries[0]) != nil)
+    }
+
     @Test func searchExcludesImagesAndNonMatches() {
         let store = ClipboardHistoryStore(settings: self.makeSettings(), storageURL: nil)
         store.recordText("alpha")

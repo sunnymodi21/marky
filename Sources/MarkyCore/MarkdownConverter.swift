@@ -171,10 +171,12 @@ public struct MarkdownConverter: Sendable {
     /// Full pipeline: markdown -> HTML -> NSAttributedString -> RTF.
     ///
     /// Main-actor isolated because AppKit's HTML importer must run on the main thread.
+    /// Theme selection is the caller's job (the app resolves the system appearance);
+    /// MarkyCore stays a deterministic transform.
     @MainActor
-    public func convert(_ markdown: String, theme: ConvertTheme? = nil, fontSize: Int? = nil) -> ConversionResult? {
+    public func convert(_ markdown: String, theme: ConvertTheme = .light, fontSize: Int? = nil) -> ConversionResult? {
         guard let fragment = self.renderHTMLFragment(markdown) else { return nil }
-        var resolvedTheme = theme ?? Self.currentTheme()
+        var resolvedTheme = theme
         if let fontSize {
             resolvedTheme = resolvedTheme.withFontSize(fontSize)
         }
@@ -197,14 +199,5 @@ public struct MarkdownConverter: Sendable {
         else { return nil }
 
         return ConversionResult(markdown: markdown, html: html, rtf: rtf)
-    }
-
-    /// Detects whether the app is currently in dark mode and returns the matching theme.
-    @MainActor
-    private static func currentTheme() -> ConvertTheme {
-        guard let app = NSApp else { return .light }
-        let appearance = app.effectiveAppearance
-        let isDark = appearance.bestMatch(from: [.darkAqua, .vibrantDark, .accessibilityHighContrastDarkAqua]) != nil
-        return isDark ? .dark : .light
     }
 }

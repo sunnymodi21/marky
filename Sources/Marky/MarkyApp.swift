@@ -10,6 +10,7 @@ struct MarkyApp: App {
     @StateObject private var settings: AppSettings
     @StateObject private var history: ClipboardHistoryStore
     @StateObject private var monitor: ClipboardMonitor
+    @StateObject private var actions: ClipboardActions
     @StateObject private var hotkeys: HotkeyManager
     @StateObject private var permissions: AccessibilityPermissionManager
     @StateObject private var historyPanel: HistoryPanelController
@@ -18,21 +19,30 @@ struct MarkyApp: App {
 
     init() {
         let settings = AppSettings()
+        let pasteboardService = PasteboardService()
+        let policy = ClipboardPolicy(settings: settings)
         let history = ClipboardHistoryStore(settings: settings)
-        let monitor = ClipboardMonitor(settings: settings, history: history)
+        let monitor = ClipboardMonitor(
+            settings: settings,
+            pasteboardService: pasteboardService,
+            policy: policy,
+            history: history)
         monitor.start()
-        let hotkeys = HotkeyManager(monitor: monitor)
+        let actions = ClipboardActions(monitor: monitor, pasteboard: pasteboardService)
+        let hotkeys = HotkeyManager(actions: actions)
         let permissions = AccessibilityPermissionManager()
         let historyPanel = HistoryPanelController(
             settings: settings,
             history: history,
             monitor: monitor,
-            hotkeys: hotkeys,
+            pasteboard: pasteboardService,
+            actions: actions,
             permissions: permissions)
         hotkeys.onOpenHistory = { [weak historyPanel] in historyPanel?.toggle() }
         _settings = StateObject(wrappedValue: settings)
         _history = StateObject(wrappedValue: history)
         _monitor = StateObject(wrappedValue: monitor)
+        _actions = StateObject(wrappedValue: actions)
         _hotkeys = StateObject(wrappedValue: hotkeys)
         _permissions = StateObject(wrappedValue: permissions)
         _historyPanel = StateObject(wrappedValue: historyPanel)
@@ -44,8 +54,9 @@ struct MarkyApp: App {
                 settings: self.settings,
                 monitor: self.monitor,
                 history: self.history,
-                hotkeys: self.hotkeys,
-                isPresented: self.$isMenuPresented)
+                actions: self.actions,
+                isPresented: self.$isMenuPresented,
+                surface: .menuDropdown)
         } label: {
             StatusLabel(isEnabled: self.settings.autoConvertEnabled)
         }

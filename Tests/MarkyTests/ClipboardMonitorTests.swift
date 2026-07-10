@@ -6,7 +6,9 @@ import Testing
 
 @MainActor
 @Suite struct ClipboardMonitorTests {
-    private func makeMonitor(autoConvert: Bool = true) -> (ClipboardMonitor, NSPasteboard, AppSettings) {
+    private func makeMonitor(autoConvert: Bool = true)
+        -> (ClipboardMonitor, PasteboardService, NSPasteboard, AppSettings)
+    {
         let suiteName = "marky-tests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defaults.removePersistentDomain(forName: suiteName)
@@ -14,8 +16,10 @@ import Testing
         settings.autoConvertEnabled = autoConvert
 
         let pasteboard = NSPasteboard(name: NSPasteboard.Name("marky-tests-\(UUID().uuidString)"))
-        let monitor = ClipboardMonitor(settings: settings, pasteboard: pasteboard)
-        return (monitor, pasteboard, settings)
+        let service = PasteboardService(pasteboard: pasteboard)
+        let policy = ClipboardPolicy(settings: settings, frontmostBundleID: { nil })
+        let monitor = ClipboardMonitor(settings: settings, pasteboardService: service, policy: policy)
+        return (monitor, service, pasteboard, settings)
     }
 
     private func setPlainText(_ text: String, on pasteboard: NSPasteboard) {
@@ -24,7 +28,7 @@ import Testing
     }
 
     @Test func convertsMarkdownAndPreservesOriginal() {
-        let (monitor, pasteboard, _) = self.makeMonitor()
+        let (monitor, _, pasteboard, _) = self.makeMonitor()
         let markdown = "# Title\n\n**bold** and [link](https://x.com)\n\n- a\n- b"
         self.setPlainText(markdown, on: pasteboard)
 
@@ -33,11 +37,11 @@ import Testing
         #expect(pasteboard.data(forType: .rtf) != nil)
         #expect(pasteboard.string(forType: .html)?.contains("<h1>") == true)
         #expect(pasteboard.string(forType: .string) == markdown)
-        #expect(pasteboard.types?.contains(ClipboardMonitor.markerType) == true)
+        #expect(pasteboard.types?.contains(PasteboardService.markerType) == true)
     }
 
     @Test func skipsPlainProse() {
-        let (monitor, pasteboard, _) = self.makeMonitor()
+        let (monitor, _, pasteboard, _) = self.makeMonitor()
         self.setPlainText("just a plain sentence without any markup", on: pasteboard)
 
         #expect(!monitor.convertClipboardIfNeeded(force: false))
@@ -45,7 +49,7 @@ import Testing
     }
 
     @Test func skipsOwnWrites() {
-        let (monitor, pasteboard, _) = self.makeMonitor()
+        let (monitor, _, pasteboard, _) = self.makeMonitor()
         self.setPlainText("# Title\n\n**bold** text\n\n- a\n- b", on: pasteboard)
 
         #expect(monitor.convertClipboardIfNeeded(force: false))
@@ -54,7 +58,7 @@ import Testing
     }
 
     @Test func respectsAutoConvertToggle() {
-        let (monitor, pasteboard, _) = self.makeMonitor(autoConvert: false)
+        let (monitor, _, pasteboard, _) = self.makeMonitor(autoConvert: false)
         self.setPlainText("# Title\n\n**bold** text", on: pasteboard)
 
         #expect(!monitor.convertClipboardIfNeeded(force: false))
@@ -64,7 +68,7 @@ import Testing
     }
 
     @Test func forceConvertsEvenNonMarkdown() {
-        let (monitor, pasteboard, _) = self.makeMonitor()
+        let (monitor, _, pasteboard, _) = self.makeMonitor()
         self.setPlainText("plain text, no markup", on: pasteboard)
 
         #expect(monitor.convertClipboardIfNeeded(force: true))
@@ -72,27 +76,27 @@ import Testing
         #expect(pasteboard.string(forType: .string) == "plain text, no markup")
     }
 
-    @Test func plainMarkdownWriteCarriesMarker() {
-        let (monitor, pasteboard, _) = self.makeMonitor()
-        monitor.writePlainMarkdown("# restored")
+    @Test func plainTextWriteCarriesMarker() {
+        let (monitor, service, pasteboard, _) = self.makeMonitor()
+        service.writePlainText("# restored")
 
         #expect(pasteboard.string(forType: .string) == "# restored")
         #expect(pasteboard.data(forType: .rtf) == nil)
-        #expect(pasteboard.types?.contains(ClipboardMonitor.markerType) == true)
+        #expect(pasteboard.types?.contains(PasteboardService.markerType) == true)
         #expect(!monitor.convertClipboardIfNeeded(force: false))
     }
 
     @Test func plainTextPrefersStringRepresentation() {
-        let (monitor, pasteboard, _) = self.makeMonitor()
+        let (monitor, service, pasteboard, _) = self.makeMonitor()
         self.setPlainText("# Title\n\n**bold**", on: pasteboard)
         #expect(monitor.convertClipboardIfNeeded(force: false))
 
         // After conversion the clipboard is rich, but plain text is the original markdown.
-        #expect(monitor.plainTextFromClipboard() == "# Title\n\n**bold**")
+        #expect(service.extractPlainText() == "# Title\n\n**bold**")
     }
 
     @Test func plainTextFallsBackToRTFExtraction() {
-        let (monitor, pasteboard, _) = self.makeMonitor()
+        let (_, service, pasteboard, _) = self.makeMonitor()
 
         let attributed = NSAttributedString(string: "rich only content")
         let rtf = attributed.rtf(
@@ -101,29 +105,42 @@ import Testing
         pasteboard.clearContents()
         pasteboard.setData(rtf, forType: .rtf)
 
-        #expect(monitor.plainTextFromClipboard() == "rich only content")
+        #expect(service.extractPlainText() == "rich only content")
     }
 
     @Test func copyAsPlainTextStripsRichRepresentations() {
-        let (monitor, pasteboard, _) = self.makeMonitor()
+        let (monitor, service, pasteboard, _) = self.makeMonitor()
         self.setPlainText("# Title\n\n**bold** text\n\n- a\n- b", on: pasteboard)
         #expect(monitor.convertClipboardIfNeeded(force: false))
         #expect(pasteboard.data(forType: .rtf) != nil)
 
-        let plain = monitor.plainTextFromClipboard()!
-        monitor.writePlainText(plain)
+        let plain = service.extractPlainText()!
+        service.writePlainText(plain)
 
         #expect(pasteboard.data(forType: .rtf) == nil)
         #expect(pasteboard.string(forType: .html) == nil)
         #expect(pasteboard.string(forType: .string) == plain)
-        #expect(pasteboard.types?.contains(ClipboardMonitor.markerType) == true)
+        #expect(pasteboard.types?.contains(PasteboardService.markerType) == true)
         // Marker prevents the monitor from reconverting the markdown-shaped text.
         #expect(!monitor.convertClipboardIfNeeded(force: false))
     }
 
+    @Test func restoreOriginalRewritesLastConversion() {
+        let (monitor, service, pasteboard, _) = self.makeMonitor()
+        self.setPlainText("# Title\n\n**bold** text\n\n- a\n- b", on: pasteboard)
+        #expect(monitor.convertClipboardIfNeeded(force: false))
+
+        let actions = ClipboardActions(monitor: monitor, pasteboard: service)
+        actions.restoreOriginal()
+
+        #expect(pasteboard.data(forType: .rtf) == nil)
+        #expect(pasteboard.string(forType: .string) == "# Title\n\n**bold** text\n\n- a\n- b")
+        #expect(pasteboard.types?.contains(PasteboardService.markerType) == true)
+    }
+
     @Test func ellipsizeKeepsHeadAndTail() {
         let text = String(repeating: "a", count: 60) + String(repeating: "b", count: 60)
-        let result = ClipboardMonitor.ellipsize(text, limit: 41)
+        let result = text.ellipsized(limit: 41)
         #expect(result.count == 41)
         #expect(result.contains("…"))
         #expect(result.hasPrefix("aaaa"))

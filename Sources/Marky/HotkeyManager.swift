@@ -9,11 +9,11 @@ extension KeyboardShortcuts.Name {
     static let openHistory = Self("openHistory")
 }
 
-/// Global hotkeys that rewrite the clipboard; paste manually with ⌘V.
-/// No Accessibility permission needed — Marky never synthesizes keystrokes.
+/// Registers the global hotkeys and dispatches them to `ClipboardActions`.
+/// The clipboard-rewrite hotkeys never paste — the user presses ⌘V.
 @MainActor
 final class HotkeyManager: ObservableObject {
-    private let monitor: ClipboardMonitor
+    private let actions: ClipboardActions
 
     /// Invoked when the open-history hotkey fires. Set by the app to toggle the
     /// standalone history window. A direct callback is more reliable than observing a
@@ -21,8 +21,8 @@ final class HotkeyManager: ObservableObject {
     /// menu-bar scene isn't rendering).
     var onOpenHistory: (() -> Void)?
 
-    init(monitor: ClipboardMonitor) {
-        self.monitor = monitor
+    init(actions: ClipboardActions) {
+        self.actions = actions
         self.ensureDefaultShortcuts()
         self.registerHandlers()
     }
@@ -46,36 +46,16 @@ final class HotkeyManager: ObservableObject {
 
     private func registerHandlers() {
         KeyboardShortcuts.onKeyUp(for: .convertToRichText) { [weak self] in
-            self?.convertToRichTextNow()
+            self?.actions.convertToRichText()
         }
         KeyboardShortcuts.onKeyUp(for: .restoreOriginal) { [weak self] in
-            self?.restoreOriginalNow()
+            self?.actions.restoreOriginal()
         }
         KeyboardShortcuts.onKeyUp(for: .copyPlainText) { [weak self] in
-            self?.copyPlainTextNow()
+            self?.actions.copyPlainText()
         }
         KeyboardShortcuts.onKeyUp(for: .openHistory) { [weak self] in
             self?.onOpenHistory?()
         }
-    }
-
-    /// Rewrites the clipboard as rich text (regardless of the auto toggle/detection).
-    func convertToRichTextNow() {
-        self.monitor.convertClipboardIfNeeded(force: true)
-    }
-
-    /// Rewrites the clipboard back to the original markdown as plain text only.
-    /// The marker type prevents the monitor from immediately reconverting it.
-    func restoreOriginalNow() {
-        let original = self.monitor.lastConversion?.markdown ?? self.monitor.clipboardMarkdown()
-        guard let original else { return }
-        self.monitor.writePlainMarkdown(original)
-    }
-
-    /// Strips all rich formatting: rewrites the clipboard as plain text only.
-    /// Works on any clipboard content, including rich text copied from other apps.
-    func copyPlainTextNow() {
-        guard let text = self.monitor.plainTextFromClipboard() else { return }
-        self.monitor.writePlainText(text)
     }
 }

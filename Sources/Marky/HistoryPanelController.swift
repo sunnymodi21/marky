@@ -19,7 +19,8 @@ final class HistoryPanelController: NSObject, ObservableObject, NSWindowDelegate
     let settings: AppSettings
     let history: ClipboardHistoryStore
     let monitor: ClipboardMonitor
-    let hotkeys: HotkeyManager
+    let pasteboard: PasteboardService
+    let actions: ClipboardActions
     let permissions: AccessibilityPermissionManager
 
     /// Bound into the hosted view. The view flips this false (Esc, convert action,
@@ -43,13 +44,15 @@ final class HistoryPanelController: NSObject, ObservableObject, NSWindowDelegate
         settings: AppSettings,
         history: ClipboardHistoryStore,
         monitor: ClipboardMonitor,
-        hotkeys: HotkeyManager,
+        pasteboard: PasteboardService,
+        actions: ClipboardActions,
         permissions: AccessibilityPermissionManager)
     {
         self.settings = settings
         self.history = history
         self.monitor = monitor
-        self.hotkeys = hotkeys
+        self.pasteboard = pasteboard
+        self.actions = actions
         self.permissions = permissions
         super.init()
     }
@@ -92,7 +95,7 @@ final class HistoryPanelController: NSObject, ObservableObject, NSWindowDelegate
     func pick(_ entry: ClipboardEntry) {
         // The view's restore wrote plain text to the pasteboard; mark it as our own
         // so the monitor doesn't re-record or auto-convert it before we paste.
-        self.monitor.markOwnWrite()
+        self.pasteboard.markOwnWrite()
         self.performPaste()
     }
 
@@ -208,10 +211,11 @@ private struct HistoryPanelRoot: View {
             settings: self.controller.settings,
             monitor: self.controller.monitor,
             history: self.controller.history,
-            hotkeys: self.controller.hotkeys,
+            actions: self.controller.actions,
             isPresented: Binding(
                 get: { self.controller.isPresented },
                 set: { self.controller.isPresented = $0 }),
+            surface: .overlay,
             onPick: { self.controller.pick($0) },
             onPasteCurrent: { self.controller.pasteCurrent() })
             .background(.regularMaterial)
