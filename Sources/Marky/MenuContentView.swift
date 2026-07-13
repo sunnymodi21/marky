@@ -1,3 +1,4 @@
+import AppKit
 import KeyboardShortcuts
 import MarkyCore
 import SwiftUI
@@ -37,6 +38,9 @@ struct MenuContentView: View {
 
     /// Entry that was just copied (shows a brief checkmark before closing).
     @State private var copiedEntryID: UUID?
+
+    /// Text clipping currently being edited in the non-destructive editor.
+    @State private var editingClip: EditableClip?
 
     @State private var showClearConfirmation = false
 
@@ -86,22 +90,33 @@ struct MenuContentView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            self.searchBar
+        Group {
+            if let clip = self.editingClip {
+                ClipEditorView(
+                    originalText: clip.text,
+                    canPaste: self.surface == .overlay,
+                    onBack: { self.dismissEditor() },
+                    onCopy: { self.commitEdit($0, paste: false) },
+                    onPaste: { self.commitEdit($0, paste: true) })
+            } else {
+                VStack(spacing: 0) {
+                    self.searchBar
 
-            if self.settings.historyEnabled {
-                Divider()
-                self.historyList
-            }
+                    if self.settings.historyEnabled {
+                        Divider()
+                        self.historyList
+                    }
 
-            // Convert/paste actions live only in the standalone paste overlay,
-            // not the menu-bar dropdown.
-            if self.surface == .overlay {
-                Divider()
-                self.controls
+                    // Convert/paste actions live only in the standalone paste overlay,
+                    // not the menu-bar dropdown.
+                    if self.surface == .overlay {
+                        Divider()
+                        self.controls
+                    }
+                    Divider()
+                    self.footer
+                }
             }
-            Divider()
-            self.footer
         }
         .frame(width: 340)
         .alert("Clear all history?", isPresented: self.$showClearConfirmation) {
@@ -120,22 +135,36 @@ struct MenuContentView: View {
             }
         }
         .onAppear { self.searchFocused = true }
+        .background {
+            if self.surface == .overlay {
+                OverlayKeyEventMonitor { event in
+                    self.handleOverlayKeyDown(event)
+                }
+            }
+        }
         .onKeyPress(.downArrow) {
+            guard self.editingClip == nil else { return .ignored }
             self.moveSelection(.down)
             return .handled
         }
         .onKeyPress(.upArrow) {
+            guard self.editingClip == nil else { return .ignored }
             self.moveSelection(.up)
             return .handled
         }
         .onKeyPress(.return) {
+            guard self.editingClip == nil else { return .ignored }
             if let index = self.selectedIndex, self.results.indices.contains(index) {
                 self.copy(self.results[index])
             }
             return .handled
         }
         .onKeyPress(.escape) {
-            self.isPresented = false
+            if self.editingClip != nil {
+                self.dismissEditor()
+            } else {
+                self.isPresented = false
+            }
             return .handled
         }
     }
@@ -212,6 +241,7 @@ struct MenuContentView: View {
                                 action: { self.copy(entry) },
                                 onCopyText: self.isImage(entry) ? { self.copyTextFromImage(entry) } : nil,
                                 onCopyRich: self.fullText(for: entry) != nil ? { self.copyAsRichText(entry) } : nil,
+                                onEdit: self.fullText(for: entry) != nil ? { self.edit(entry) } : nil,
                                 onPin: { self.history.togglePin(entry) },
                                 onDelete: { self.history.delete(entry) })
                             .id(entry.id)
@@ -269,6 +299,38 @@ struct MenuContentView: View {
     }
 
     // MARK: - Keyboard navigation
+
+    /// The focused search field can consume navigation keys before SwiftUI's
+    /// ancestor `onKeyPress` handlers see them. The standalone panel therefore
+    /// monitors its own AppKit key events and routes the picker commands here.
+    private func handleOverlayKeyDown(_ event: NSEvent) -> Bool {
+        let commandModifiers = event.modifierFlags.intersection([.command, .control, .option])
+        guard commandModifiers.isEmpty else { return false }
+
+        switch event.keyCode {
+        case 125: // Down Arrow
+            guard self.editingClip == nil else { return false }
+            self.moveSelection(.down)
+        case 126: // Up Arrow
+            guard self.editingClip == nil else { return false }
+            self.moveSelection(.up)
+        case 36, 76: // Return and numeric-keypad Enter
+            guard self.editingClip == nil else { return false }
+            if let index = self.selectedIndex, self.results.indices.contains(index) {
+                self.copy(self.results[index])
+            }
+        case 53: // Escape
+            if self.editingClip != nil {
+                self.dismissEditor()
+            } else {
+                self.isPresented = false
+            }
+        default:
+            return false
+        }
+
+        return true
+    }
 
     private func moveSelection(_ direction: Direction) {
         guard !self.results.isEmpty else { return }
@@ -369,6 +431,28 @@ struct MenuContentView: View {
     private func copyAsRichText(_ entry: ClipboardEntry) {
         guard case let .text(text) = entry.content else { return }
         if self.actions.convertTextToRichText(text) {
+            self.isPresented = false
+        }
+    }
+
+    /// Opens a non-destructive editor for a text clipping. Saving writes a new
+    /// clipping; the original history entry is never mutated.
+    private func edit(_ entry: ClipboardEntry) {
+        guard case let .text(text) = entry.content else { return }
+        self.editingClip = EditableClip(id: entry.id, text: text)
+    }
+
+    private func dismissEditor() {
+        self.editingClip = nil
+    }
+
+    private func commitEdit(_ text: String, paste: Bool) {
+        self.actions.copyEditedText(text, recordingIn: self.history)
+        self.dismissEditor()
+
+        if paste {
+            self.pasteCurrent()
+        } else {
             self.isPresented = false
         }
     }
@@ -481,6 +565,7 @@ private struct HistoryRow: View {
     let action: () -> Void
     var onCopyText: (() -> Void)?
     var onCopyRich: (() -> Void)?
+    var onEdit: (() -> Void)?
     var onPin: (() -> Void)?
     let onDelete: () -> Void
 
@@ -529,17 +614,15 @@ private struct HistoryRow: View {
                             .buttonStyle(.plain)
                             .help("Copy text from image (OCR)")
                         }
-                        if self.fullText != nil {
+                        if let onEdit = self.onEdit {
                             Button {
-                                withAnimation(.easeInOut(duration: 0.15)) {
-                                    self.expanded.toggle()
-                                }
+                                onEdit()
                             } label: {
-                                Image(systemName: self.expanded ? "chevron.up" : "chevron.down")
+                                Image(systemName: "pencil")
                                     .foregroundStyle(.secondary)
                             }
                             .buttonStyle(.plain)
-                            .help(self.expanded ? "Collapse" : "Expand preview")
+                            .help("Edit this clipping")
                         }
                         if let onPin = self.onPin {
                             Button {
@@ -584,6 +667,9 @@ private struct HistoryRow: View {
                     : (self.hovering ? Color.primary.opacity(0.08) : Color.clear)))
         .onHover { self.hovering = $0 }
         .contextMenu {
+            if let onEdit = self.onEdit {
+                Button("Edit…") { onEdit() }
+            }
             if let onCopyText = self.onCopyText {
                 Button("Copy Text from Image") { onCopyText() }
             }
@@ -598,5 +684,92 @@ private struct HistoryRow: View {
             }
             Button("Delete", role: .destructive) { self.onDelete() }
         }
+    }
+}
+
+// MARK: - Clipping editor
+
+private struct EditableClip: Identifiable {
+    let id: UUID
+    let text: String
+}
+
+private struct ClipEditorView: View {
+    let originalText: String
+    let canPaste: Bool
+    let onBack: () -> Void
+    let onCopy: (String) -> Void
+    let onPaste: (String) -> Void
+
+    @State private var text: String
+    @FocusState private var editorFocused: Bool
+
+    init(
+        originalText: String,
+        canPaste: Bool,
+        onBack: @escaping () -> Void,
+        onCopy: @escaping (String) -> Void,
+        onPaste: @escaping (String) -> Void)
+    {
+        self.originalText = originalText
+        self.canPaste = canPaste
+        self.onBack = onBack
+        self.onCopy = onCopy
+        self.onPaste = onPaste
+        self._text = State(initialValue: originalText)
+    }
+
+    private var canCommit: Bool {
+        self.text != self.originalText
+            && !self.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Button(action: self.onBack) {
+                Label("Back", systemImage: "chevron.left")
+            }
+            .buttonStyle(.plain)
+
+            Text("Edit Clipping")
+                .font(.headline)
+
+            TextEditor(text: self.$text)
+                .font(.body)
+                .focused(self.$editorFocused)
+                .frame(maxWidth: .infinity, minHeight: 220)
+                .padding(4)
+                .background(Color.primary.opacity(0.04))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(Color.secondary.opacity(0.25))
+                }
+
+            HStack {
+                Text("\(self.text.count) characters")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+
+                Spacer()
+
+                Button("Copy Edited") {
+                    self.onCopy(self.text)
+                }
+                .disabled(!self.canCommit)
+                .keyboardShortcut(
+                    self.canPaste ? nil : KeyboardShortcut(.return, modifiers: .command))
+
+                if self.canPaste {
+                    Button("Paste Edited") {
+                        self.onPaste(self.text)
+                    }
+                    .disabled(!self.canCommit)
+                    .keyboardShortcut(.return, modifiers: .command)
+                }
+            }
+        }
+        .padding(16)
+        .onAppear { self.editorFocused = true }
     }
 }

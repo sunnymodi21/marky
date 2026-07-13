@@ -138,6 +138,21 @@ import Testing
         #expect(pasteboard.types?.contains(PasteboardService.markerType) == true)
     }
 
+    @Test func editedTextIsCopiedAndRecordedWithoutReplacingOriginal() {
+        let (monitor, service, pasteboard, settings) = self.makeMonitor()
+        let history = ClipboardHistoryStore(settings: settings, storageURL: nil)
+        let actions = ClipboardActions(monitor: monitor, pasteboard: service)
+        history.recordText("original clipping")
+
+        actions.copyEditedText("edited clipping", recordingIn: history)
+
+        #expect(pasteboard.string(forType: .string) == "edited clipping")
+        #expect(pasteboard.types?.contains(PasteboardService.markerType) == true)
+        #expect(history.entries.count == 2)
+        #expect(history.entries.first?.content == .text("edited clipping"))
+        #expect(history.entries.contains { $0.content == .text("original clipping") })
+    }
+
     @Test func ellipsizeKeepsHeadAndTail() {
         let text = String(repeating: "a", count: 60) + String(repeating: "b", count: 60)
         let result = text.ellipsized(limit: 41)

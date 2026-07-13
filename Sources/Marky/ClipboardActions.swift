@@ -44,4 +44,12 @@ final class ClipboardActions: ObservableObject {
     func writePlainText(_ text: String) {
         self.pasteboard.writePlainText(text)
     }
+
+    /// Copies a non-destructively edited clipping and explicitly records it.
+    /// Marky's marked pasteboard writes are skipped by the monitor, so the
+    /// history insertion must happen as part of the same user action.
+    func copyEditedText(_ text: String, recordingIn history: ClipboardHistoryStore) {
+        self.pasteboard.writePlainText(text)
+        history.recordText(text)
+    }
 }
