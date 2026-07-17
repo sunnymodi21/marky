@@ -54,6 +54,10 @@ struct MenuContentView: View {
     /// ScrollViewProxy captured from the history ScrollView for scroll-to-selection.
     @State private var scrollProxy: ScrollViewProxy?
 
+    /// Recreating the history scroll view on presentation prevents SwiftUI from
+    /// preserving an older visible row when newer entries were inserted above it.
+    @State private var scrollResetID = UUID()
+
     private var isSearching: Bool {
         !self.query.trimmingCharacters(in: .whitespaces).isEmpty
     }
@@ -131,6 +135,8 @@ struct MenuContentView: View {
             if presented {
                 self.query = ""
                 self.selectedIndex = nil
+                self.scrollProxy = nil
+                self.scrollResetID = UUID()
                 self.searchFocused = true
             }
         }
@@ -252,6 +258,7 @@ struct MenuContentView: View {
                 .frame(height: self.listHeight)
                 .onAppear { self.scrollProxy = proxy }
             }
+            .id(self.scrollResetID)
 
             HStack {
                 Text(
