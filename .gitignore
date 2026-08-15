@@ -5,3 +5,6 @@
 Marky.app/
 dist/
 .env
+.wrangler/
+workers/**/node_modules/
+workers/download/public/*.zip
