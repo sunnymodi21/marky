@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Marky formats Markdown copied from Claude Code, Codex, and any terminal, lets you edit clips before pasting, and extracts text from images — all on your Mac.">
-  <title>Marky — Format terminal Markdown before you paste</title>
+  <meta name="description" content="Clipboard history for Mac. Search every clip with ⌥⌘V, OCR text from screenshots on-device, and automatically format Markdown as rich text for Docs, Slack, and Mail.">
+  <title>Marky — Clipboard history for Mac, plus Markdown that pastes as rich text</title>
 </head>
 <body>
 <style>
@@ -270,6 +270,65 @@
   .ocr-image strong { display: block; color: var(--ink); margin: 12px 0 5px; }
   .ocr-text { color: var(--ink); white-space: pre-line; }
 
+  /* Clipboard history panel mock */
+  .history-split {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 56px; align-items: center; margin-top: 40px;
+  }
+  .history-points { display: flex; flex-direction: column; gap: 22px; }
+  .history-points h3 { font-size: 17px; margin-bottom: 6px; }
+  .history-points p { font-size: 14.5px; color: var(--muted); }
+  .history-panel {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 14px; box-shadow: var(--shadow); overflow: hidden;
+  }
+  .hist-search {
+    margin: 12px; padding: 8px 12px;
+    background: var(--code-bg); border: 1px solid var(--line);
+    border-radius: 8px; font-size: 13px; color: var(--muted);
+  }
+  .hist-row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 11px 14px; border-top: 1px solid var(--line);
+    font-size: 13.5px;
+  }
+  .hist-row.sel {
+    background: var(--accent); color: var(--accent-ink);
+    border-top-color: transparent;
+  }
+  .hist-body { min-width: 0; flex: 1; }
+  .hist-title {
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    font-weight: 500;
+  }
+  .hist-meta { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+  .hist-row.sel .hist-meta { color: var(--accent-ink); opacity: 0.8; }
+  .hist-thumb {
+    width: 40px; height: 30px; flex-shrink: 0;
+    border-radius: 4px; background: var(--code-bg);
+    border: 1px solid var(--line);
+    display: flex; flex-direction: column; justify-content: center;
+    gap: 3px; padding: 6px;
+  }
+  .hist-thumb span {
+    display: block; height: 3px; border-radius: 1px;
+    background: var(--muted); opacity: 0.45;
+  }
+  .hist-thumb span:nth-child(1) { width: 90%; }
+  .hist-thumb span:nth-child(2) { width: 70%; }
+  .hist-thumb span:nth-child(3) { width: 80%; }
+  .ocr-badge {
+    flex-shrink: 0;
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.06em;
+    border: 1px solid var(--line); border-radius: 4px;
+    padding: 2px 6px; color: var(--accent); background: var(--card);
+  }
+  .hist-caption {
+    font-family: var(--mono); font-size: 12px; color: var(--muted);
+    text-align: center; margin-top: 12px;
+  }
+  .hist-caption kbd { font-size: 11px; }
+
   /* Features */
   .features {
     display: grid; grid-template-columns: repeat(3, 1fr);
@@ -355,7 +414,7 @@
 
   @media (max-width: 800px) {
     .hero { grid-template-columns: 1fr; gap: 40px; padding: 48px 0 64px; }
-    .steps, .workflows, .features { grid-template-columns: 1fr; }
+    .steps, .workflows, .features, .history-split { grid-template-columns: 1fr; }
     .pricing-grid { grid-template-columns: 1fr; }
     .nav-links a:not(.btn) { display: none; }
   }
@@ -366,6 +425,7 @@
     <span class="wordmark"><span class="tick">##</span> Marky</span>
     <div class="nav-links">
       <a href="#how">How it works</a>
+      <a href="#history">History</a>
       <a href="#use-cases">Use cases</a>
       <a href="#features">Features</a>
       <a href="#pricing">Pricing</a>
@@ -376,16 +436,16 @@
 
   <header class="hero">
     <div class="hero-copy">
-      <p class="eyebrow">A menu-bar app for macOS</p>
+      <p class="eyebrow">Clipboard history for macOS</p>
       <h1 class="headline">
         <span class="md-line">Copy <span class="syntax">**</span>Markdown<span class="syntax">**</span>.</span>
         <span class="rich-line">Paste <strong>rich text.</strong></span>
       </h1>
       <p class="sub">
-        Copy Markdown from Claude Code, Codex, or any terminal. Marky quietly
-        turns it into formatted rich text, ready for Google&nbsp;Docs, Slack,
-        Mail, and more. Edit a clip before it lands, or pull editable text
-        straight from a screenshot.
+        A clipboard manager that remembers everything you copy — text and
+        screenshots — with on-device OCR. Copied Markdown becomes formatted
+        rich text automatically, ready for Google&nbsp;Docs, Slack, Mail,
+        and more.
       </p>
       <div class="cta-row">
         <a class="btn btn-lg" href="#pricing">Buy Marky — $12</a>
@@ -424,41 +484,109 @@
     <p class="section-label">How it works</p>
     <h2>Copy. It converts. Paste.</h2>
     <p class="section-intro">
-      No window to open, no button to press. Marky sits in your menu bar and
-      recognizes Markdown the instant it lands on your clipboard.
+      No extra window for conversion. Marky sits in your menu bar, recognizes
+      Markdown the instant it lands, and files every copy — text and screenshots —
+      into searchable history.
     </p>
     <div class="steps">
       <div class="step">
         <p class="step-num">1</p>
         <h3>Copy anything</h3>
         <p>Grab Markdown from Claude Code, Codex, another terminal agent, a
-        README, or your notes with a normal <kbd>⌘C</kbd>. Marky converts only
-        real Markdown — commands, URLs, and source code pass through untouched.</p>
+        README, or your notes with a normal <kbd>⌘C</kbd>. Screenshots and
+        images are saved too. Commands, URLs, and source code pass through
+        unconverted.</p>
       </div>
       <div class="step">
         <p class="step-num">2</p>
         <h3>Marky rewrites the clipboard</h3>
-        <p>The clipboard gets rich text <em>and</em> styled HTML representations —
-        while the plain-text copy keeps your original Markdown, character for
-        character. Nothing is ever destroyed.</p>
+        <p>When the copy is Markdown, the clipboard gets rich text <em>and</em>
+        styled HTML — while the plain-text side keeps your original Markdown,
+        character for character. Nothing is ever destroyed.</p>
       </div>
       <div class="step">
         <p class="step-num">3</p>
-        <h3>Paste anywhere</h3>
+        <h3>Paste anywhere — or from history</h3>
         <p>Rich editors like Google Docs, Slack, Notion, and Mail get formatted
-        text. Terminals and code editors still get your raw Markdown. Every app
-        receives the version it wants.</p>
+        text. Terminals still get raw Markdown. Press <kbd>⌥⌘V</kbd> anytime
+        to search earlier clips and paste one into the app you came from.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="history">
+    <p class="section-label">Clipboard history</p>
+    <h2>Win+V, for your Mac</h2>
+    <p class="section-intro">
+      Every copy is saved locally — text, images, screenshots. Open a floating,
+      keyboard-first window, arrow through clips, hit Return, and the clip
+      pastes into the app you were using. Copied a screenshot? Extract the
+      text with on-device OCR.
+    </p>
+    <div class="history-split">
+      <div class="history-points">
+        <div>
+          <h3>Text and screenshots</h3>
+          <p>History records what you copy, not just Markdown. Images and
+          macOS screenshots (TIFF) are stored as PNG with thumbnails. Search
+          covers the full remembered list, not just the last few.</p>
+        </div>
+        <div>
+          <h3>Keyboard-first, paste on pick</h3>
+          <p><kbd>⌥⌘V</kbd> opens the window. ↑/↓ to move, Return to paste,
+          Esc to dismiss. With Accessibility granted, Marky reactivates the
+          previous app and presses ⌘V for you — like Windows clipboard
+          history, on a Mac.</p>
+        </div>
+        <div>
+          <h3>OCR any screenshot</h3>
+          <p>From history, extract text from a copied image with Apple's
+          on-device recognition. The result lands on your clipboard as
+          editable text. The image never leaves your Mac.</p>
+        </div>
+      </div>
+      <div>
+        <div class="history-panel" aria-label="Clipboard history window showing text clips and a screenshot with OCR">
+          <div class="hist-search">Search clipboard history</div>
+          <div class="hist-row sel">
+            <div class="hist-body">
+              <div class="hist-title">Launch checklist</div>
+              <div class="hist-meta">Markdown · just now</div>
+            </div>
+          </div>
+          <div class="hist-row">
+            <div class="hist-thumb" aria-hidden="true"><span></span><span></span><span></span></div>
+            <div class="hist-body">
+              <div class="hist-title">Release notes screenshot</div>
+              <div class="hist-meta">Image · 1440×900</div>
+            </div>
+            <span class="ocr-badge">OCR</span>
+          </div>
+          <div class="hist-row">
+            <div class="hist-body">
+              <div class="hist-title">git push origin main</div>
+              <div class="hist-meta">Plain text · 2 min ago</div>
+            </div>
+          </div>
+          <div class="hist-row">
+            <div class="hist-body">
+              <div class="hist-title">Summarize the rollout plan for the team</div>
+              <div class="hist-meta">Plain text · 8 min ago</div>
+            </div>
+          </div>
+        </div>
+        <p class="hist-caption"><kbd>⌥⌘V</kbd> · pick a clip, it pastes itself</p>
       </div>
     </div>
   </section>
 
   <section id="use-cases">
-    <p class="section-label">Made for AI-assisted work</p>
-    <h2>Your clipboard is the bridge from terminal to finished work</h2>
+    <p class="section-label">What it's for</p>
+    <h2>Reuse anything you've copied — and format the Markdown</h2>
     <p class="section-intro">
-      Terminal agents are great at producing structured Markdown. Marky makes
-      that output useful everywhere else — and gives you a chance to clean it
-      up before it reaches the next input.
+      Terminal agents produce structured Markdown. You also copy error
+      messages, screenshots of docs, and half-finished prompts. Marky keeps
+      all of it, and makes each clip useful in the next place you paste.
     </p>
     <div class="workflows">
       <article class="workflow">
@@ -505,10 +633,10 @@
 Fixed login flow…</div>
         </div>
         <div class="workflow-copy">
-          <h3>Image → editable text</h3>
-          <p>Copy a screenshot or image, then extract its text from clipboard
-          history. Marky uses on-device OCR, so the image never needs to leave
-          your Mac.</p>
+          <h3>Screenshots → editable text</h3>
+          <p>Copy a screenshot or any image, then OCR it from clipboard
+          history. Marky uses on-device recognition, so the image never
+          leaves your Mac — and the text is ready to paste or edit.</p>
         </div>
       </article>
     </div>
@@ -517,13 +645,17 @@ Fixed login flow…</div>
   <section id="features">
     <p class="section-label">Features</p>
     <h2>A clipboard that works the way you do</h2>
+    <p class="section-intro">
+      History for every clip, automatic Markdown formatting, and screenshot
+      OCR — all on your Mac, all from the menu bar.
+    </p>
     <div class="features">
       <div class="feature">
         <span class="glyph">⌥⌘V</span>
         <h3>Clipboard history</h3>
-        <p>A floating, keyboard-first history window. Arrow through recent
-        clips, hit Return, and the clip pastes straight into the app you came
-        from.</p>
+        <p>A floating, keyboard-first history window — text and images.
+        Arrow through recent clips, hit Return, and the clip pastes straight
+        into the app you came from.</p>
       </div>
       <div class="feature">
         <span class="glyph">txt → md</span>
@@ -534,8 +666,9 @@ Fixed login flow…</div>
       <div class="feature">
         <span class="glyph">img → txt</span>
         <h3>OCR for screenshots</h3>
-        <p>Copied an image? Marky's history can extract its text with
-        on-device recognition — no cloud, no upload.</p>
+        <p>Copied a screenshot? Extract its text from history with on-device
+        recognition — no cloud, no upload. The result is editable plain text
+        on your clipboard.</p>
       </div>
       <div class="feature">
         <span class="glyph">●</span>
@@ -563,7 +696,7 @@ Fixed login flow…</div>
           <tr><th scope="col">Action</th><th scope="col">Default shortcut</th><th scope="col">What it does</th></tr>
         </thead>
         <tbody>
-          <tr><td>Open history</td><td class="combo"><kbd>⌥⌘V</kbd></td><td class="what">Floating clipboard history — pick a clip, it pastes itself</td></tr>
+          <tr><td>Open history</td><td class="combo"><kbd>⌥⌘V</kbd></td><td class="what">Floating clipboard history — search, pick a clip, it pastes itself</td></tr>
           <tr><td>Convert to rich text</td><td class="combo"><kbd>⌥⌘M</kbd></td><td class="what">Force-convert whatever is on the clipboard right now</td></tr>
           <tr><td>Restore original</td><td class="combo"><kbd>⌥⇧⌘M</kbd></td><td class="what">Put the untouched Markdown back</td></tr>
           <tr><td>Copy as plain text</td><td class="combo"><kbd>⌥⌘P</kbd></td><td class="what">Strip all formatting from any clipboard content</td></tr>
@@ -580,10 +713,10 @@ Fixed login flow…</div>
         <p class="price">$12</p>
         <p class="price-note">One-time purchase · no subscription</p>
         <ul class="includes">
+          <li>Keyboard-first clipboard history — text and screenshots</li>
+          <li>On-device OCR for copied images and screenshots</li>
           <li>Automatic Markdown → rich text conversion</li>
-          <li>Keyboard-first clipboard history with paste-on-pick</li>
           <li>Edit clips before copying or pasting</li>
-          <li>On-device OCR for copied images</li>
           <li>All hotkeys, settings, and exclusions</li>
           <li>Free updates for all 1.x releases</li>
           <li>Use on all Macs you own</li>
@@ -603,10 +736,25 @@ Fixed login flow…</div>
     <h2>Questions, answered</h2>
     <div class="faq">
       <details>
+        <summary>Is Marky a clipboard manager?</summary>
+        <p>Yes. It records text and images as you copy them, persists history
+        on your Mac, and opens a searchable floating window with
+        <kbd>⌥⌘V</kbd>. Pick a clip and it pastes into the app you came from.
+        Markdown conversion and screenshot OCR sit on top of that same
+        history.</p>
+      </details>
+      <details>
         <summary>Does it work with Claude Code and Codex?</summary>
         <p>Yes. Copy their Markdown output from the terminal as usual. Marky
         detects and formats it for rich-text apps while keeping the original
         Markdown available for terminals, editors, and developer tools.</p>
+      </details>
+      <details>
+        <summary>Can it read text from screenshots?</summary>
+        <p>Yes. Copy a screenshot or any image, open history, and run OCR on
+        that clip. Recognition uses Apple's on-device Vision engine — nothing
+        is uploaded. The extracted text is copied to your clipboard so you
+        can paste or edit it.</p>
       </details>
       <details>
         <summary>Does my clipboard ever leave my Mac?</summary>
