@@ -49,6 +49,31 @@ fi
 # Copy SPM resource bundles (e.g. KeyboardShortcuts localizations).
 find "$BUILD_DIR" -maxdepth 1 -name '*.bundle' -exec cp -R {} "$APP/Contents/Resources/" \;
 
+# Embed Sparkle.framework (XPC helpers + Autoupdate live inside it). SPM links
+# Sparkle but does not copy the framework into the app bundle.
+SPARKLE_FW=""
+for candidate in "$ROOT/.build/artifacts/sparkle/Sparkle/Sparkle.xcframework"/macos-*/Sparkle.framework; do
+    if [ -d "$candidate" ]; then
+        SPARKLE_FW="$candidate"
+        break
+    fi
+done
+if [ -z "$SPARKLE_FW" ] || [ ! -d "$SPARKLE_FW" ]; then
+    echo "error: Sparkle.framework not found under .build/artifacts/sparkle" >&2
+    echo "       Run: swift package resolve" >&2
+    exit 1
+fi
+mkdir -p "$APP/Contents/Frameworks"
+ditto "$SPARKLE_FW" "$APP/Contents/Frameworks/Sparkle.framework"
+
+# swift build records an rpath into .build/; the packaged app must look next
+# to itself. Strip the ad-hoc signature first — install_name_tool refuses to
+# rewrite a signed binary.
+codesign --remove-signature "$APP/Contents/MacOS/Marky" 2>/dev/null || true
+if ! otool -l "$APP/Contents/MacOS/Marky" | grep -q '@executable_path/../Frameworks'; then
+    install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/Marky"
+fi
+
 # Sign with a STABLE identity so TCC (Accessibility) grants persist across rebuilds.
 # Ad-hoc signing keys the identity off the binary hash, which changes every build —
 # macOS then treats each rebuild as a new/modified app and revokes the grant. A real
@@ -63,21 +88,35 @@ if [ -z "$SIGN_ID" ]; then
     [ -z "$SIGN_ID" ] && SIGN_ID="$(security find-identity -v -p codesigning | awk -F'"' '/Apple Development/{print $2; exit}')"
 fi
 
-CODESIGN_ARGS=(--force --deep)
+# Sparkle forbids --deep on the outer app: it can strip XPC entitlements.
+# Sign nested Sparkle helpers inside-out, then the app bundle without --deep.
+CODESIGN_NESTED=(--force --preserve-metadata=entitlements,requirements,flags,runtime)
+CODESIGN_APP=(--force)
 if [ "$NOTARIZE" = "1" ]; then
     # Notarization requires the hardened runtime and a secure timestamp.
-    CODESIGN_ARGS+=(--options runtime --timestamp)
+    CODESIGN_NESTED+=(--options runtime --timestamp)
+    CODESIGN_APP+=(--options runtime --timestamp)
 elif [ "${MARKY_HARDENED_RUNTIME:-0}" = "1" ]; then
-    CODESIGN_ARGS+=(--options runtime)
+    CODESIGN_NESTED+=(--options runtime)
+    CODESIGN_APP+=(--options runtime)
 fi
 
 if [ -n "$SIGN_ID" ]; then
-    codesign "${CODESIGN_ARGS[@]}" --sign "$SIGN_ID" "$APP"
-    echo "Signed with: $SIGN_ID"
+    SIGN_ARGS=(--sign "$SIGN_ID")
+    SIGN_LABEL="$SIGN_ID"
 else
-    codesign "${CODESIGN_ARGS[@]}" --sign - "$APP"
-    echo "Signed ad-hoc (no stable identity found; Accessibility grant won't persist across rebuilds)"
+    SIGN_ARGS=(--sign -)
+    SIGN_LABEL="ad-hoc (no stable identity found; Accessibility grant won't persist across rebuilds)"
 fi
+
+SPARKLE_VER="$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
+codesign "${CODESIGN_NESTED[@]}" "${SIGN_ARGS[@]}" "$SPARKLE_VER/XPCServices/Installer.xpc"
+codesign "${CODESIGN_NESTED[@]}" "${SIGN_ARGS[@]}" "$SPARKLE_VER/XPCServices/Downloader.xpc"
+codesign "${CODESIGN_NESTED[@]}" "${SIGN_ARGS[@]}" "$SPARKLE_VER/Updater.app"
+codesign "${CODESIGN_NESTED[@]}" "${SIGN_ARGS[@]}" "$SPARKLE_VER/Autoupdate"
+codesign "${CODESIGN_NESTED[@]}" "${SIGN_ARGS[@]}" "$APP/Contents/Frameworks/Sparkle.framework"
+codesign "${CODESIGN_APP[@]}" "${SIGN_ARGS[@]}" "$APP"
+echo "Signed with: $SIGN_LABEL"
 
 echo "Packaged: $APP ($CONFIG)"
 
@@ -129,4 +168,5 @@ if [ "$NOTARIZE" = "1" ]; then
 
     echo "Notarized and stapled: $APP"
     echo "Distributable: $ZIP"
+    echo "Then: ./Scripts/generate_appcast.sh  # upload dist/updates/ to download.marky.click"
 fi

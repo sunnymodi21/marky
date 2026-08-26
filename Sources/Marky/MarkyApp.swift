@@ -14,6 +14,7 @@ struct MarkyApp: App {
     @StateObject private var hotkeys: HotkeyManager
     @StateObject private var permissions: AccessibilityPermissionManager
     @StateObject private var historyPanel: HistoryPanelController
+    @StateObject private var updates: UpdateController
     @State private var isMenuPresented = false
     @State private var statusItem: NSStatusItem?
 
@@ -46,6 +47,7 @@ struct MarkyApp: App {
         _hotkeys = StateObject(wrappedValue: hotkeys)
         _permissions = StateObject(wrappedValue: permissions)
         _historyPanel = StateObject(wrappedValue: historyPanel)
+        _updates = StateObject(wrappedValue: UpdateController())
     }
 
     var body: some Scene {
@@ -83,9 +85,18 @@ struct MarkyApp: App {
                 settings: self.settings,
                 history: self.history,
                 monitor: self.monitor,
-                permissions: self.permissions)
+                permissions: self.permissions,
+                updates: self.updates)
         }
         .windowResizability(.contentSize)
+        .commands {
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates…") {
+                    self.updates.checkForUpdates()
+                }
+                .disabled(!self.updates.canCheckForUpdates)
+            }
+        }
     }
 
     private func applyStatusItemAppearance() {

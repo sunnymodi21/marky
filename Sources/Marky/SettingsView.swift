@@ -8,6 +8,7 @@ struct SettingsView: View {
     @ObservedObject var history: ClipboardHistoryStore
     @ObservedObject var monitor: ClipboardMonitor
     @ObservedObject var permissions: AccessibilityPermissionManager
+    @ObservedObject var updates: UpdateController
 
     var body: some View {
         TabView {
@@ -17,7 +18,7 @@ struct SettingsView: View {
                 .tabItem { Label("History", systemImage: "clock.arrow.circlepath") }
             ShortcutsPane()
                 .tabItem { Label("Shortcuts", systemImage: "keyboard") }
-            AboutPane(conversionCount: self.monitor.conversionCount)
+            AboutPane(conversionCount: self.monitor.conversionCount, updates: self.updates)
                 .tabItem { Label("About", systemImage: "info.circle") }
         }
         .frame(width: 520)
@@ -281,6 +282,14 @@ private extension View {
 
 private struct AboutPane: View {
     let conversionCount: Int
+    @ObservedObject var updates: UpdateController
+    @State private var automaticallyChecksForUpdates: Bool
+
+    init(conversionCount: Int, updates: UpdateController) {
+        self.conversionCount = conversionCount
+        self.updates = updates
+        _automaticallyChecksForUpdates = State(initialValue: updates.updater.automaticallyChecksForUpdates)
+    }
 
     var body: some View {
         VStack(spacing: 8) {
@@ -299,6 +308,22 @@ private struct AboutPane: View {
             Text("MIT licensed.")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
+
+            Divider()
+                .frame(width: 220)
+
+            Button("Check for Updates…") {
+                self.updates.checkForUpdates()
+            }
+            .disabled(!self.updates.canCheckForUpdates)
+            .controlSize(.regular)
+
+            Toggle("Automatically check for updates", isOn: self.$automaticallyChecksForUpdates)
+                .onChange(of: self.automaticallyChecksForUpdates) { _, newValue in
+                    self.updates.updater.automaticallyChecksForUpdates = newValue
+                }
+                .toggleStyle(.checkbox)
+                .font(.caption)
 
             Divider()
                 .frame(width: 220)

@@ -57,6 +57,13 @@ Dev loop (kills running instance, builds, tests, relaunches):
 ./Scripts/compile_and_run.sh
 ```
 
+Ship an update (after bumping `CFBundleVersion` in `Info.plist`):
+
+```sh
+./Scripts/create_dmg.sh
+./Scripts/generate_appcast.sh   # → dist/updates/appcast.xml; upload that folder to download.marky.click
+```
+
 Run tests:
 
 ```sh

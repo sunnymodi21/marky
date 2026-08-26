@@ -364,21 +364,21 @@
   td.what { color: var(--muted); }
   td:first-child { color: var(--ink); font-weight: 500; }
 
-  /* Pricing */
-  .pricing-grid {
+  /* Download */
+  .download-grid {
     display: grid; grid-template-columns: 1fr 1fr;
     gap: 40px; align-items: start; margin-top: 40px;
   }
-  .price-card {
+  .download-card {
     background: var(--card); border: 1px solid var(--line);
     border-radius: 14px; padding: 32px;
     box-shadow: var(--shadow);
   }
-  .price {
+  .download-label {
     font-family: var(--serif); font-size: 46px; font-weight: 700;
     line-height: 1;
   }
-  .price-note { color: var(--muted); font-size: 14px; margin: 6px 0 22px; }
+  .download-note { color: var(--muted); font-size: 14px; margin: 6px 0 22px; }
   .includes { list-style: none; margin-bottom: 26px; }
   .includes li {
     padding: 7px 0 7px 26px; position: relative;
@@ -389,8 +389,8 @@
     content: "✓"; position: absolute; left: 2px;
     color: var(--accent); font-weight: 700;
   }
-  .price-aside p { font-size: 14.5px; color: var(--muted); margin-bottom: 14px; }
-  .price-aside strong { color: var(--ink); }
+  .download-aside p { font-size: 14.5px; color: var(--muted); margin-bottom: 14px; }
+  .download-aside strong { color: var(--ink); }
 
   /* FAQ */
   .faq { margin-top: 32px; max-width: 68ch; }
@@ -415,7 +415,7 @@
   @media (max-width: 800px) {
     .hero { grid-template-columns: 1fr; gap: 40px; padding: 48px 0 64px; }
     .steps, .workflows, .features, .history-split { grid-template-columns: 1fr; }
-    .pricing-grid { grid-template-columns: 1fr; }
+    .download-grid { grid-template-columns: 1fr; }
     .nav-links a:not(.btn) { display: none; }
   }
 </style>
@@ -708,10 +708,10 @@ Fixed login flow…</div>
   <section id="download">
     <p class="section-label">Download</p>
     <h2>Get Marky. It's free.</h2>
-    <div class="pricing-grid">
-      <div class="price-card">
-        <p class="price">Free</p>
-        <p class="price-note">No subscription · no account · yours to keep</p>
+    <div class="download-grid">
+      <div class="download-card">
+        <p class="download-label">Free</p>
+        <p class="download-note">No subscription · no account · yours to keep</p>
         <ul class="includes">
           <li>Keyboard-first clipboard history — text and screenshots</li>
           <li>On-device OCR for copied images and screenshots</li>
@@ -723,7 +723,7 @@ Fixed login flow…</div>
         </ul>
         <a class="btn btn-lg" href="https://download.marky.click/Marky.dmg">Download Marky</a>
       </div>
-      <div class="price-aside">
+      <div class="download-aside">
         <p><strong>Direct download.</strong> Grab the DMG and drag Marky to
         Applications. No account, no checkout.</p>
         <p><strong>macOS 15+.</strong> A tiny menu-bar app. Everything —

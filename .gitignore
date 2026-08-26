@@ -5,6 +5,7 @@
 Marky.app/
 dist/
 .env
+sparkle_eddsa.key
 .wrangler/
 workers/**/node_modules/
 workers/download/public/*.zip

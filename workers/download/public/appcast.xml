@@ -1,0 +1,16 @@
+<?xml version="1.0" standalone="yes"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>Marky</title>
+        <item>
+            <title>0.1.0</title>
+            <pubDate>Wed, 26 Aug 2026 13:52:18 -0500</pubDate>
+            <link>https://marky.click</link>
+            <sparkle:version>1</sparkle:version>
+            <sparkle:shortVersionString>0.1.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <enclosure url="https://download.marky.click/Marky.dmg" length="3302065" type="application/octet-stream" sparkle:edSignature="RutgQAfWBlXGrSKWsw7sfBiBHLjHV51AXRJ+4HRByZ99k7G3iJ7E8JJLtOpacVOy/lfunYAUJ2cLExjXBj3qAQ=="/>
+        </item>
+    </channel>
+</rss>

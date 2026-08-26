@@ -10,6 +10,7 @@ let package = Package(
         .package(url: "https://github.com/swiftlang/swift-cmark.git", branch: "gfm"),
         .package(url: "https://github.com/sindresorhus/KeyboardShortcuts", from: "1.16.0"),
         .package(url: "https://github.com/orchetect/MenuBarExtraAccess", from: "1.2.0"),
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.0"),
     ],
     targets: [
         .target(
@@ -24,6 +25,7 @@ let package = Package(
                 "MarkyCore",
                 .product(name: "KeyboardShortcuts", package: "KeyboardShortcuts"),
                 .product(name: "MenuBarExtraAccess", package: "MenuBarExtraAccess"),
+                .product(name: "Sparkle", package: "Sparkle"),
             ]),
         .executableTarget(
             name: "MarkyCLI",

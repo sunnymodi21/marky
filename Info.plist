@@ -30,5 +30,11 @@
     <string>NSApplication</string>
     <key>NSHumanReadableCopyright</key>
     <string>MIT License</string>
+    <key>SUFeedURL</key>
+    <string>https://download.marky.click/appcast.xml</string>
+    <key>SUPublicEDKey</key>
+    <string>pqNOxk3NyhjhlY4OluPl4RnheUZlV/k2+UGvCqG0PGs=</string>
+    <key>SUEnableAutomaticChecks</key>
+    <true/>
 </dict>
 </plist>

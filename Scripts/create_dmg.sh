@@ -68,3 +68,4 @@ xcrun stapler staple "$DMG"
 xcrun stapler validate "$DMG"
 
 echo "Release DMG ready: $DMG"
+echo "Sparkle: bump CFBundleVersion, then ./Scripts/generate_appcast.sh and upload dist/updates/ to download.marky.click"

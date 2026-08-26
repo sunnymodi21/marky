@@ -84,6 +84,7 @@ Sources/
 │   ├── AccessibilityPermissionManager.swift # AXIsProcessTrusted state + prompt
 │   ├── MenuContentView.swift     # search bar, history list, convert actions, footer; MenuSurface + onPick hook
 │   ├── SettingsView.swift        # General / History / Shortcuts / About panes
+│   ├── UpdateController.swift    # Sparkle updater; promotes LSUIElement while update UI is up
 │   ├── AppSettings.swift         # UserDefaults-backed @Published settings
 │   ├── ConvertTheme+System.swift # resolves light/dark ConvertTheme from NSApp appearance
 │   ├── String+Ellipsize.swift    # middle-ellipsize helper
@@ -143,7 +144,8 @@ selected row scrolled into view.
 ```sh
 swift build                       # debug build
 swift test                        # 58 tests, 7 suites (Swift Testing, @Test/#expect)
-./Scripts/package_app.sh release [notarize]  # SPM binary -> Marky.app (stable-signed, copies *.bundle); notarize also staples + emits dist/Marky-<ver>.zip (creds from gitignored .env)
+./Scripts/package_app.sh release [notarize]  # SPM binary -> Marky.app (stable-signed, copies *.bundle + Sparkle.framework); notarize also staples + emits dist/Marky-<ver>.zip
+./Scripts/generate_appcast.sh     # Sparkle appcast from dist/Marky-*.dmg|zip → dist/updates/appcast.xml
 ./Scripts/compile_and_run.sh      # kill, build, test, package debug, relaunch
 swift run MarkyCLI --detect -     # CLI: score stdin; also --html, file args, clipboard default
 ```
@@ -173,6 +175,6 @@ so the grant sticks. After changing the signing identity, run
 - `swift-cmark` (branch `gfm`) — products `cmark-gfm`, `cmark-gfm-extensions`
 - `KeyboardShortcuts` (1.x) — global hotkeys + recorder UI
 - `MenuBarExtraAccess` — NSStatusItem access for the icon pulse
+- `Sparkle` (2.9+) — in-app updates via `https://download.marky.click/appcast.xml`
 
-Sparkle/notarization intentionally out of scope so far; distribution is local
-`package_app.sh` + Login Items.
+EdDSA public key lives in `Info.plist` (`SUPublicEDKey`); the private key is in the login Keychain (and optionally gitignored `sparkle_eddsa.key`). Bump `CFBundleVersion` for every shipped build — Sparkle compares that, not the marketing version. After notarizing, run `./Scripts/generate_appcast.sh` and upload `dist/updates/` to `download.marky.click`.
