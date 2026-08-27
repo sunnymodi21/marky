@@ -594,21 +594,21 @@
       </div>
       <div class="demo-stage">
         <div class="demo-video-panel" id="demo-rich" role="tabpanel" aria-labelledby="tab-rich">
-          <video autoplay muted loop playsinline controls
+          <video autoplay muted playsinline controls
             poster="https://download.marky.click/videos/marky-markdown-to-rich-text.jpg"
             aria-label="Markdown copied from the terminal pastes as rich text">
             <source src="https://download.marky.click/videos/marky-markdown-to-rich-text.mp4" type="video/mp4">
           </video>
         </div>
         <div class="demo-video-panel" id="demo-history" role="tabpanel" aria-labelledby="tab-history" hidden>
-          <video muted loop playsinline controls preload="metadata"
+          <video muted playsinline controls preload="metadata"
             poster="https://download.marky.click/videos/marky-paste-from-shortcut-history.jpg"
             aria-label="Paste a clip from clipboard history with the keyboard shortcut">
             <source src="https://download.marky.click/videos/marky-paste-from-shortcut-history.mp4" type="video/mp4">
           </video>
         </div>
         <div class="demo-video-panel" id="demo-ocr" role="tabpanel" aria-labelledby="tab-ocr" hidden>
-          <video muted loop playsinline controls preload="metadata"
+          <video muted playsinline controls preload="metadata"
             poster="https://download.marky.click/videos/marky-ocr-from-image.jpg"
             aria-label="Extract text from a copied image with on-device OCR">
             <source src="https://download.marky.click/videos/marky-ocr-from-image.mp4" type="video/mp4">
@@ -996,6 +996,16 @@ Fixed login flow…</div>
       if (nextIndex === undefined) return;
       event.preventDefault();
       activateDemo(demoTabs[nextIndex]);
+    });
+  });
+
+  demoPanels.forEach((panel) => {
+    panel.querySelector("video").addEventListener("ended", () => {
+      const currentTab = demoTabs.find(
+        (tab) => tab.getAttribute("aria-controls") === panel.id
+      );
+      const nextIndex = (demoTabs.indexOf(currentTab) + 1) % demoTabs.length;
+      activateDemo(demoTabs[nextIndex], false);
     });
   });
 </script>
