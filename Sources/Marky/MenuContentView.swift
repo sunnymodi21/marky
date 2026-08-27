@@ -34,8 +34,6 @@ struct MenuContentView: View {
     @State private var copiedEntryID: UUID?
     @State private var editingText: String?
 
-    @State private var showClearConfirmation = false
-
     @State private var query = ""
     @FocusState private var searchFocused: Bool
 
@@ -115,14 +113,6 @@ struct MenuContentView: View {
             }
         }
         .frame(width: 340)
-        .alert("Clear all history?", isPresented: self.$showClearConfirmation) {
-            Button("Clear", role: .destructive) {
-                self.history.clear()
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This removes all clippings. This cannot be undone.")
-        }
         .onChange(of: self.isPresented) { _, presented in
             if presented {
                 self.query = ""
@@ -262,7 +252,8 @@ struct MenuContentView: View {
                     .foregroundStyle(.tertiary)
                 Spacer()
                 Button("Clear") {
-                    self.showClearConfirmation = true
+                    self.history.clear()
+                    self.isPresented = false
                 }
                 .buttonStyle(.plain)
                 .font(.caption2)
