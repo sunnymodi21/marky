@@ -24,8 +24,14 @@
     <string>1</string>
     <key>LSMinimumSystemVersion</key>
     <string>15.0</string>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.productivity</string>
     <key>LSUIElement</key>
     <true/>
+    <key>NSAccessibilityUsageDescription</key>
+    <string>Marky uses Accessibility only to paste a selected clip into the app you were using (Command-V). Watching the clipboard does not need this permission.</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>Marky sends a paste command (Command-V) to the app you were using when you pick a clip from history.</string>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
     <key>NSHumanReadableCopyright</key>

@@ -1,7 +1,18 @@
 import AppKit
 import Combine
+#if !APPSTORE
 import Sparkle
+#endif
 
+#if APPSTORE
+/// App Store builds get updates from Apple; Sparkle is omitted.
+@MainActor
+final class UpdateController: ObservableObject {
+    @Published private(set) var canCheckForUpdates = false
+
+    func checkForUpdates() {}
+}
+#else
 /// Owns Sparkle’s updater and keeps its UI visible for a menu-bar (LSUIElement) app.
 @MainActor
 final class UpdateController: NSObject, ObservableObject, SPUStandardUserDriverDelegate {
@@ -68,3 +79,4 @@ final class UpdateController: NSObject, ObservableObject, SPUStandardUserDriverD
         Task { @MainActor in self.endSparkleUI() }
     }
 }
+#endif

@@ -153,6 +153,10 @@ private struct GeneralPane: View {
             Divider()
 
             Toggle("Paste on click in the history window", isOn: self.$settings.autoPasteEnabled)
+            #if APPSTORE
+            Text("When you pick a clip in the floating history window (global shortcut), Marky pastes it into the app you were using. macOS may ask to allow Marky to control System Events the first time.")
+                .settingsDescription()
+            #else
             Text("When you pick a clip in the floating history window (global shortcut), Marky pastes it into the app you were using. Requires Accessibility permission.")
                 .settingsDescription()
 
@@ -174,6 +178,7 @@ private struct GeneralPane: View {
                 }
                 .onAppear { self.permissions.refresh() }
             }
+            #endif
 
             Divider()
 
@@ -213,6 +218,7 @@ private struct GeneralPane: View {
         }
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .onAppear { self.permissions.refresh() }
     }
 
     private func refreshRunningApps() {
@@ -245,8 +251,13 @@ private struct ShortcutsPane: View {
             KeyboardShortcuts.Recorder("Copy as Plain Text:", name: .copyPlainText)
             Text("Opens a floating history window. Use ↑↓ to navigate, Enter or click to paste the clip into the app you were using, Esc to close.")
                 .settingsDescription()
+            #if APPSTORE
+            Text("Other shortcuts rewrite the clipboard (and show up in History); paste with ⌘V. Paste on click may ask to control System Events.")
+                .settingsDescription()
+            #else
             Text("Other shortcuts rewrite the clipboard (and show up in History); paste with ⌘V.")
                 .settingsDescription()
+            #endif
         }
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -268,12 +279,16 @@ private extension View {
 private struct AboutPane: View {
     let conversionCount: Int
     @ObservedObject var updates: UpdateController
+    #if !APPSTORE
     @State private var automaticallyChecksForUpdates: Bool
+    #endif
 
     init(conversionCount: Int, updates: UpdateController) {
         self.conversionCount = conversionCount
         self.updates = updates
+        #if !APPSTORE
         _automaticallyChecksForUpdates = State(initialValue: updates.updater.automaticallyChecksForUpdates)
+        #endif
     }
 
     var body: some View {
@@ -294,6 +309,7 @@ private struct AboutPane: View {
                 .font(.caption)
                 .foregroundStyle(.tertiary)
 
+            #if !APPSTORE
             Divider()
                 .frame(width: 220)
 
@@ -309,9 +325,21 @@ private struct AboutPane: View {
                 }
                 .toggleStyle(.checkbox)
                 .font(.caption)
+            #endif
 
             Divider()
                 .frame(width: 220)
+
+            HStack(spacing: 12) {
+                if let url = URL(string: "https://marky.click/privacy") {
+                    Link("Privacy Policy", destination: url)
+                        .font(.caption)
+                }
+                if let url = URL(string: "https://marky.click") {
+                    Link("Website", destination: url)
+                        .font(.caption)
+                }
+            }
 
             HStack(spacing: 4) {
                 Image(systemName: "envelope")

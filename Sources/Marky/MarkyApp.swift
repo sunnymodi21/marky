@@ -85,6 +85,7 @@ struct MarkyApp: App {
                 updates: self.updates)
         }
         .windowResizability(.contentSize)
+        #if !APPSTORE
         .commands {
             CommandGroup(after: .appInfo) {
                 Button("Check for Updates…") {
@@ -93,6 +94,7 @@ struct MarkyApp: App {
                 .disabled(!self.updates.canCheckForUpdates)
             }
         }
+        #endif
     }
 
     private func applyStatusItemAppearance() {
@@ -178,6 +180,13 @@ private enum StatusIconImage {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.accessory)
+        if WelcomeWindowController.hasBeenShown {
+            NSApp.setActivationPolicy(.accessory)
+        } else {
+            // Stay a regular app until the welcome window is dismissed so the
+            // reviewer (and first-run users) can find Marky in the Dock.
+            NSApp.setActivationPolicy(.regular)
+            WelcomeWindowController.showIfNeeded()
+        }
     }
 }

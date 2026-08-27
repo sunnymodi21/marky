@@ -50,9 +50,10 @@ final class AppSettings: ObservableObject {
         didSet { self.defaults.set(self.outputFontSize, forKey: Keys.outputFontSize) }
     }
 
-    /// When enabled, clicking a clip in the standalone history window synthesizes
-    /// ⌘V into the previously focused app after restoring it to the clipboard.
-    /// Requires the Accessibility permission; falls back to copy-only when not granted.
+    /// When enabled, clicking a clip in the standalone history window pastes it
+    /// into the previously focused app. Direct-download builds use Accessibility
+    /// (CGEvent); the App Store build uses System Events. Falls back to copy-only
+    /// if the user declines.
     @Published var autoPasteEnabled: Bool {
         didSet { self.defaults.set(self.autoPasteEnabled, forKey: Keys.autoPasteEnabled) }
     }

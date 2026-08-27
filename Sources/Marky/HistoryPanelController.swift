@@ -97,19 +97,22 @@ final class HistoryPanelController: NSObject, ObservableObject, NSWindowDelegate
         self.performPaste()
     }
 
-    /// Closes the overlay and, when auto-paste is on and Accessibility is granted,
-    /// reactivates the previously focused app and synthesizes ⌘V.
+    /// Closes the overlay and, when auto-paste is on, reactivates the previously
+    /// focused app and synthesizes ⌘V. Direct-download builds need Accessibility;
+    /// the App Store build uses System Events (Automation) instead.
     private func performPaste() {
         self.hide()
 
         guard self.settings.autoPasteEnabled else { return }
 
+        #if !APPSTORE
         self.permissions.refresh()
         guard self.permissions.isTrusted else {
             // Clip is on the clipboard; prompt for the permission so it works next time.
             self.permissions.requestIfNeeded()
             return
         }
+        #endif
 
         let target = self.previousApp
         target?.activate()

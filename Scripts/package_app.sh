@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # Packages the SPM-built Marky binary into Marky.app.
 # Usage: ./Scripts/package_app.sh [debug|release] [notarize]
+#        ./Scripts/package_app.sh mas [upload]
+#
+# "mas" builds a sandboxed Mac App Store package (no Sparkle) at dist/Marky.pkg.
+# "upload" (or MARKY_MAS_UPLOAD=1) sends that pkg to App Store Connect via Transporter.
 #
 # "notarize" (or MARKY_NOTARIZE=1) additionally notarizes and staples the app and
 # leaves a distributable zip in dist/. Requires a Developer ID Application identity
@@ -13,15 +17,28 @@
 set -euo pipefail
 
 CONFIG="${1:-release}"
+MAS=0
+UPLOAD=0
 NOTARIZE=0
-if [ "${2:-}" = "notarize" ] || [ "${MARKY_NOTARIZE:-0}" = "1" ]; then
+if [ "${1:-}" = "mas" ]; then
+    MAS=1
+    CONFIG="release"
+    if [ "${2:-}" = "upload" ] || [ "${MARKY_MAS_UPLOAD:-0}" = "1" ]; then
+        UPLOAD=1
+    fi
+elif [ "${2:-}" = "notarize" ] || [ "${MARKY_NOTARIZE:-0}" = "1" ]; then
     NOTARIZE=1
 fi
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APP="$ROOT/Marky.app"
 
 cd "$ROOT"
-swift build -c "$CONFIG"
+if [ "$MAS" = "1" ]; then
+    export MARKY_APP_STORE=1
+    swift build -c "$CONFIG" -Xswiftc -DAPPSTORE
+else
+    swift build -c "$CONFIG"
+fi
 
 BUILD_DIR="$(swift build -c "$CONFIG" --show-bin-path)"
 
@@ -31,6 +48,9 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BUILD_DIR/Marky" "$APP/Contents/MacOS/Marky"
 cp "$ROOT/Info.plist" "$APP/Contents/Info.plist"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
+if [ -f "$ROOT/PrivacyInfo.xcprivacy" ]; then
+    cp "$ROOT/PrivacyInfo.xcprivacy" "$APP/Contents/Resources/PrivacyInfo.xcprivacy"
+fi
 
 ICON_SOURCE="$ROOT/Assets/AppIconSource.png"
 if [ -f "$ICON_SOURCE" ]; then
@@ -49,6 +69,39 @@ fi
 # Copy SPM resource bundles (e.g. KeyboardShortcuts localizations).
 find "$BUILD_DIR" -maxdepth 1 -name '*.bundle' -exec cp -R {} "$APP/Contents/Resources/" \;
 
+# App Store validation requires every bundled .bundle to have CFBundleIdentifier.
+shopt -s nullglob
+for bundle in "$APP/Contents/Resources/"*.bundle; do
+    plist=""
+    if [ -f "$bundle/Contents/Info.plist" ]; then
+        plist="$bundle/Contents/Info.plist"
+    elif [ -f "$bundle/Info.plist" ]; then
+        plist="$bundle/Info.plist"
+    fi
+    [ -n "$plist" ] || continue
+    if ! /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist" >/dev/null 2>&1; then
+        name="$(basename "$bundle" .bundle | tr -c 'A-Za-z0-9.-' '-')"
+        /usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string com.sunnymodi.marky.$name" "$plist"
+        /usr/libexec/PlistBuddy -c "Add :CFBundleName string $name" "$plist" 2>/dev/null || true
+        /usr/libexec/PlistBuddy -c "Add :CFBundlePackageType string BNDL" "$plist" 2>/dev/null || true
+        /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 1" "$plist" 2>/dev/null || true
+        /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string 1.0" "$plist" 2>/dev/null || true
+    fi
+done
+shopt -u nullglob
+
+if [ "$MAS" = "1" ]; then
+    /usr/libexec/PlistBuddy -c 'Set :CFBundleShortVersionString 1.0' "$APP/Contents/Info.plist"
+    /usr/libexec/PlistBuddy -c 'Set :CFBundleVersion 4' "$APP/Contents/Info.plist"
+    /usr/libexec/PlistBuddy -c 'Delete :SUFeedURL' "$APP/Contents/Info.plist" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c 'Delete :SUPublicEDKey' "$APP/Contents/Info.plist" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c 'Delete :SUEnableAutomaticChecks' "$APP/Contents/Info.plist" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c 'Delete :ITSAppUsesNonExemptEncryption' "$APP/Contents/Info.plist" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c 'Add :ITSAppUsesNonExemptEncryption bool false' "$APP/Contents/Info.plist"
+    cp "$ROOT/Signing/Marky_Mac_App_Store.provisionprofile" "$APP/Contents/embedded.provisionprofile"
+    xattr -cr "$APP"
+fi
+
 # Embed Sparkle.framework (XPC helpers + Autoupdate live inside it). SPM links
 # Sparkle but does not copy the framework into the app bundle.
 SPARKLE_FW=""
@@ -58,19 +111,21 @@ for candidate in "$ROOT/.build/artifacts/sparkle/Sparkle/Sparkle.xcframework"/ma
         break
     fi
 done
-if [ -z "$SPARKLE_FW" ] || [ ! -d "$SPARKLE_FW" ]; then
-    echo "error: Sparkle.framework not found under .build/artifacts/sparkle" >&2
-    echo "       Run: swift package resolve" >&2
-    exit 1
+if [ "$MAS" != "1" ]; then
+    if [ -z "$SPARKLE_FW" ] || [ ! -d "$SPARKLE_FW" ]; then
+        echo "error: Sparkle.framework not found under .build/artifacts/sparkle" >&2
+        echo "       Run: swift package resolve" >&2
+        exit 1
+    fi
+    mkdir -p "$APP/Contents/Frameworks"
+    ditto "$SPARKLE_FW" "$APP/Contents/Frameworks/Sparkle.framework"
 fi
-mkdir -p "$APP/Contents/Frameworks"
-ditto "$SPARKLE_FW" "$APP/Contents/Frameworks/Sparkle.framework"
 
 # swift build records an rpath into .build/; the packaged app must look next
 # to itself. Strip the ad-hoc signature first — install_name_tool refuses to
 # rewrite a signed binary.
 codesign --remove-signature "$APP/Contents/MacOS/Marky" 2>/dev/null || true
-if ! otool -l "$APP/Contents/MacOS/Marky" | grep -q '@executable_path/../Frameworks'; then
+if [ "$MAS" != "1" ] && ! otool -l "$APP/Contents/MacOS/Marky" | grep -q '@executable_path/../Frameworks'; then
     install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/Marky"
 fi
 
@@ -84,15 +139,21 @@ fi
 # fall back to ad-hoc only when no identity is available.
 SIGN_ID="${MARKY_SIGN_ID:-}"
 if [ -z "$SIGN_ID" ]; then
-    SIGN_ID="$(security find-identity -v -p codesigning | awk -F'"' '/Developer ID Application/{print $2; exit}')"
-    [ -z "$SIGN_ID" ] && SIGN_ID="$(security find-identity -v -p codesigning | awk -F'"' '/Apple Development/{print $2; exit}')"
+    if [ "$MAS" = "1" ]; then
+        SIGN_ID="$(security find-identity -v -p codesigning | awk -F'"' '/3rd Party Mac Developer Application/{print $2; exit}')"
+    else
+        SIGN_ID="$(security find-identity -v -p codesigning | awk -F'"' '/Developer ID Application/{print $2; exit}')"
+        [ -z "$SIGN_ID" ] && SIGN_ID="$(security find-identity -v -p codesigning | awk -F'"' '/Apple Development/{print $2; exit}')"
+    fi
 fi
 
 # Sparkle forbids --deep on the outer app: it can strip XPC entitlements.
 # Sign nested Sparkle helpers inside-out, then the app bundle without --deep.
 CODESIGN_NESTED=(--force --preserve-metadata=entitlements,requirements,flags,runtime)
 CODESIGN_APP=(--force)
-if [ "$NOTARIZE" = "1" ]; then
+if [ "$MAS" = "1" ]; then
+    CODESIGN_APP+=(--options runtime --timestamp --entitlements "$ROOT/Signing/Marky.entitlements")
+elif [ "$NOTARIZE" = "1" ]; then
     # Notarization requires the hardened runtime and a secure timestamp.
     CODESIGN_NESTED+=(--options runtime --timestamp)
     CODESIGN_APP+=(--options runtime --timestamp)
@@ -105,20 +166,64 @@ if [ -n "$SIGN_ID" ]; then
     SIGN_ARGS=(--sign "$SIGN_ID")
     SIGN_LABEL="$SIGN_ID"
 else
+    if [ "$MAS" = "1" ]; then
+        echo "error: Mac App Store packaging requires a '3rd Party Mac Developer Application' identity." >&2
+        exit 1
+    fi
     SIGN_ARGS=(--sign -)
     SIGN_LABEL="ad-hoc (no stable identity found; Accessibility grant won't persist across rebuilds)"
 fi
 
-SPARKLE_VER="$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
-codesign "${CODESIGN_NESTED[@]}" "${SIGN_ARGS[@]}" "$SPARKLE_VER/XPCServices/Installer.xpc"
-codesign "${CODESIGN_NESTED[@]}" "${SIGN_ARGS[@]}" "$SPARKLE_VER/XPCServices/Downloader.xpc"
-codesign "${CODESIGN_NESTED[@]}" "${SIGN_ARGS[@]}" "$SPARKLE_VER/Updater.app"
-codesign "${CODESIGN_NESTED[@]}" "${SIGN_ARGS[@]}" "$SPARKLE_VER/Autoupdate"
-codesign "${CODESIGN_NESTED[@]}" "${SIGN_ARGS[@]}" "$APP/Contents/Frameworks/Sparkle.framework"
+if [ "$MAS" != "1" ]; then
+    SPARKLE_VER="$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
+    codesign "${CODESIGN_NESTED[@]}" "${SIGN_ARGS[@]}" "$SPARKLE_VER/XPCServices/Installer.xpc"
+    codesign "${CODESIGN_NESTED[@]}" "${SIGN_ARGS[@]}" "$SPARKLE_VER/XPCServices/Downloader.xpc"
+    codesign "${CODESIGN_NESTED[@]}" "${SIGN_ARGS[@]}" "$SPARKLE_VER/Updater.app"
+    codesign "${CODESIGN_NESTED[@]}" "${SIGN_ARGS[@]}" "$SPARKLE_VER/Autoupdate"
+    codesign "${CODESIGN_NESTED[@]}" "${SIGN_ARGS[@]}" "$APP/Contents/Frameworks/Sparkle.framework"
+fi
 codesign "${CODESIGN_APP[@]}" "${SIGN_ARGS[@]}" "$APP"
 echo "Signed with: $SIGN_LABEL"
 
 echo "Packaged: $APP ($CONFIG)"
+
+if [ "$MAS" = "1" ]; then
+    INSTALLER_ID="${MARKY_INSTALLER_ID:-}"
+    if [ -z "$INSTALLER_ID" ]; then
+        INSTALLER_ID="$(security find-identity -v | awk -F'"' '/3rd Party Mac Developer Installer/{print $2; exit}')"
+    fi
+    if [ -z "$INSTALLER_ID" ]; then
+        echo "error: Mac App Store packaging requires a '3rd Party Mac Developer Installer' identity." >&2
+        exit 1
+    fi
+
+    DIST="$ROOT/dist"
+    PKG="$DIST/Marky.pkg"
+    mkdir -p "$DIST"
+    rm -f "$PKG"
+    productbuild --component "$APP" /Applications --sign "$INSTALLER_ID" "$PKG"
+    echo "Installer: $PKG"
+    echo "Signed with: $INSTALLER_ID"
+
+    if [ "$UPLOAD" = "1" ]; then
+        if [ -f "$ROOT/.env" ]; then
+            set -a
+            # shellcheck disable=SC1091
+            . "$ROOT/.env"
+            set +a
+        fi
+        APP_PASSWORD="${APPLE_APP_SPECIFIC_PASSWORD:-${APPLE_APP_PASSWORD:-}}"
+        TRANSPORTER="/Applications/Transporter.app/Contents/itms/bin/iTMSTransporter"
+        if [ ! -x "$TRANSPORTER" ]; then
+            echo "error: Transporter.app is required to upload to App Store Connect." >&2
+            exit 1
+        fi
+        echo "Uploading $PKG to App Store Connect..."
+        "$TRANSPORTER" -m upload -assetFile "$PKG" \
+            -apiKey "${APPSTORE_API_KEY:?set APPSTORE_API_KEY}" \
+            -apiIssuer "${APPSTORE_ISSUER_ID:?set APPSTORE_ISSUER_ID}"
+    fi
+fi
 
 if [ "$NOTARIZE" = "1" ]; then
     # Notarization only accepts Developer ID signatures — check what actually
