@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Privacy policy for Marky, the macOS clipboard app. Clipboard history, Markdown conversion, and OCR stay on your Mac.">
+  <title>Privacy — Marky</title>
+  <style>
+    :root {
+      --paper: #FAF9F5; --card: #FFFFFF; --ink: #21231E; --muted: #6C6E63;
+      --line: #E5E4DA; --accent: #14685A; --accent-hover: #0F5548; --accent-ink: #FFFFFF;
+      --serif: ui-serif, "New York", Georgia, serif;
+      --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+      --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --paper: #15171A; --card: #1C1F21; --ink: #E8EAE3; --muted: #9CA095;
+        --line: #2B2F30; --accent: #45BFA4; --accent-hover: #5FD0B6; --accent-ink: #0C2620;
+      }
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: var(--sans); background: var(--paper); color: var(--ink);
+      line-height: 1.65; -webkit-font-smoothing: antialiased;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .wrap { max-width: 720px; margin: 0 auto; padding: 0 24px 80px; }
+    nav { display: flex; align-items: center; justify-content: space-between; padding: 20px 0 8px; }
+    .wordmark { font-family: var(--mono); font-size: 17px; font-weight: 600; color: var(--ink); }
+    .wordmark .tick { color: var(--accent); }
+    .back { color: var(--muted); font-size: 14px; }
+    h1 { font-family: var(--serif); font-size: 36px; letter-spacing: -0.02em; margin: 28px 0 8px; }
+    .meta { color: var(--muted); font-family: var(--mono); font-size: 13px; margin-bottom: 36px; }
+    h2 { font-size: 18px; margin: 32px 0 10px; }
+    p, li { color: var(--ink); font-size: 16px; }
+    p + p { margin-top: 12px; }
+    ul { margin: 8px 0 0 22px; }
+    li { margin: 6px 0; }
+    footer { margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <nav>
+    <a class="wordmark" href="/"><span class="tick">##</span> Marky</a>
+    <a class="back" href="/">← Home</a>
+  </nav>
+
+  <h1>Privacy Policy</h1>
+  <p class="meta">Last updated August 27, 2026 · Contact <a href="mailto:sunnymodi21@proton.me">sunnymodi21@proton.me</a></p>
+
+  <p>Marky is a macOS menu-bar app by Sunny Modi. It converts copied Markdown into rich text, keeps a local clipboard history, and can read text from images with on-device OCR. This policy describes what Marky does — and does not — do with your data.</p>
+
+  <h2>Short version</h2>
+  <p>Your clipboard never leaves your Mac. Marky does not have accounts, analytics, ads, or tracking. History, conversion, and OCR all run on-device.</p>
+
+  <h2>What Marky stores on your Mac</h2>
+  <ul>
+    <li><strong>Clipboard history.</strong> Recent text and images you copy are saved locally at <code>~/Library/Application Support/Marky/</code> so you can search and paste them later. Image files live in that folder; a small JSON index records metadata such as timestamps and hashes.</li>
+    <li><strong>Settings.</strong> Preferences (history limits, hotkeys, auto-convert, excluded apps) are stored in standard macOS user defaults on your Mac.</li>
+  </ul>
+  <p>You can clear history from the app at any time, or delete the Marky folder to remove stored clips.</p>
+
+  <h2>What Marky does not collect</h2>
+  <ul>
+    <li>No account, email, or identifier is created.</li>
+    <li>No clipboard contents, screenshots, or OCR results are uploaded.</li>
+    <li>No advertising identifiers, analytics SDKs, or crash reporters are included.</li>
+    <li>Marky does not sell, share, or broker personal data.</li>
+  </ul>
+
+  <h2>On-device processing</h2>
+  <ul>
+    <li><strong>Markdown conversion</strong> runs locally (cmark-gfm → rich text / HTML on the pasteboard).</li>
+    <li><strong>OCR</strong> uses Apple’s on-device Vision framework. Recognized text is copied back to your clipboard; nothing is sent to a server.</li>
+    <li><strong>Password-manager secrets</strong> marked concealed or transient (the nspasteboard.org convention used by 1Password and others) are skipped: never converted, never stored in history.</li>
+  </ul>
+
+  <h2>Permissions</h2>
+  <p><strong>Accessibility</strong> is optional. It is used only so the history window can paste into the app you came from (synthetic ⌘V). If you decline, Marky still converts Markdown, records history, and copies clips — you paste them yourself.</p>
+  <p>Marky does not request Screen Recording, Contacts, Location, Photos library, Camera, or Microphone access.</p>
+
+  <h2>The website and direct downloads</h2>
+  <p>marky.click and download.marky.click are hosted on Cloudflare. Visiting those pages or downloading the app may produce standard web server logs (for example IP address, user agent, and the URL requested) that Cloudflare retains according to its own policies. That logging is separate from the Marky app, which does not send clipboard data to those sites.</p>
+  <p>The direct-download build may check for updates from <code>download.marky.click</code> (Sparkle). The Mac App Store build does not; Apple delivers those updates.</p>
+
+  <h2>Children</h2>
+  <p>Marky is a general-purpose productivity tool and does not target children. It does not knowingly collect personal information from anyone, including children under 13.</p>
+
+  <h2>Changes</h2>
+  <p>If this policy changes, the date at the top of this page will be updated. Continued use of Marky after a change means you accept the updated policy.</p>
+
+  <h2>Contact</h2>
+  <p>Questions about privacy: <a href="mailto:sunnymodi21@proton.me">sunnymodi21@proton.me</a></p>
+
+  <footer>© 2026 Sunny Modi · <a href="/">marky.click</a></footer>
+</div>
+</body>
+</html>
