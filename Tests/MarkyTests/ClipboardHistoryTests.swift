@@ -33,6 +33,16 @@ import Testing
         return rep.representation(using: .png, properties: [:])!
     }
 
+    private func makeActions(settings: AppSettings, pasteboard: NSPasteboard) -> ClipboardActions {
+        let service = PasteboardService(pasteboard: pasteboard)
+        let policy = ClipboardPolicy(settings: settings, frontmostBundleID: { nil })
+        let monitor = ClipboardMonitor(
+            settings: settings,
+            pasteboardService: service,
+            policy: policy)
+        return ClipboardActions(monitor: monitor, pasteboard: service)
+    }
+
     @Test func recordsTextMostRecentFirst() {
         let store = ClipboardHistoryStore(settings: self.makeSettings(), storageURL: nil)
         store.recordText("first")
@@ -85,18 +95,6 @@ import Testing
         #expect(store.entries[0].content == .text("entry 19"))
     }
 
-    @Test func displayLimitCapsMenuEntries() {
-        let settings = self.makeSettings()
-        settings.historyDisplayLimit = 5
-        let store = ClipboardHistoryStore(settings: settings, storageURL: nil)
-        for index in 0..<10 {
-            store.recordText("entry \(index)")
-        }
-
-        #expect(store.entries.count == 10)
-        #expect(store.displayEntries.count == 5)
-    }
-
     @Test func skipsEmptyText() {
         let store = ClipboardHistoryStore(settings: self.makeSettings(), storageURL: nil)
         store.recordText("   \n  ")
@@ -135,22 +133,28 @@ import Testing
     }
 
     @Test func restoreWritesTextToPasteboard() {
-        let store = ClipboardHistoryStore(settings: self.makeSettings(), storageURL: nil)
+        let settings = self.makeSettings()
+        let store = ClipboardHistoryStore(settings: settings, storageURL: nil)
         store.recordText("restore me")
         let pasteboard = NSPasteboard(name: NSPasteboard.Name("marky-tests-\(UUID().uuidString)"))
+        let actions = self.makeActions(settings: settings, pasteboard: pasteboard)
 
-        store.restore(store.entries[0], to: pasteboard)
+        #expect(actions.restore(store.entries[0], from: store))
         #expect(pasteboard.string(forType: .string) == "restore me")
+        #expect(pasteboard.types?.contains(PasteboardService.markerType) == true)
     }
 
     @Test func restoreWritesImageToPasteboard() {
-        let store = ClipboardHistoryStore(settings: self.makeSettings(), storageURL: nil)
+        let settings = self.makeSettings()
+        let store = ClipboardHistoryStore(settings: settings, storageURL: nil)
         store.recordImage(pngData: self.makePNG())
         let pasteboard = NSPasteboard(name: NSPasteboard.Name("marky-tests-\(UUID().uuidString)"))
+        let actions = self.makeActions(settings: settings, pasteboard: pasteboard)
 
-        store.restore(store.entries[0], to: pasteboard)
+        #expect(actions.restore(store.entries[0], from: store))
         #expect(pasteboard.data(forType: .png) != nil)
         #expect(pasteboard.data(forType: .tiff) != nil)
+        #expect(pasteboard.types?.contains(PasteboardService.markerType) == true)
     }
 
     @Test func clearEmptiesStoreAndDisk() {

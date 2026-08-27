@@ -19,7 +19,6 @@ final class HistoryPanelController: NSObject, ObservableObject, NSWindowDelegate
     let settings: AppSettings
     let history: ClipboardHistoryStore
     let monitor: ClipboardMonitor
-    let pasteboard: PasteboardService
     let actions: ClipboardActions
     let permissions: AccessibilityPermissionManager
 
@@ -44,14 +43,12 @@ final class HistoryPanelController: NSObject, ObservableObject, NSWindowDelegate
         settings: AppSettings,
         history: ClipboardHistoryStore,
         monitor: ClipboardMonitor,
-        pasteboard: PasteboardService,
         actions: ClipboardActions,
         permissions: AccessibilityPermissionManager)
     {
         self.settings = settings
         self.history = history
         self.monitor = monitor
-        self.pasteboard = pasteboard
         self.actions = actions
         self.permissions = permissions
         super.init()
@@ -90,12 +87,8 @@ final class HistoryPanelController: NSObject, ObservableObject, NSWindowDelegate
         self.isPresented = false
     }
 
-    /// Called after the hosted view has already restored `entry` to the clipboard.
-    /// Pastes it into the previously focused app when possible.
-    func pick(_ entry: ClipboardEntry) {
-        // The view's restore wrote plain text to the pasteboard; mark it as our own
-        // so the monitor doesn't re-record or auto-convert it before we paste.
-        self.pasteboard.markOwnWrite()
+    /// Called after the hosted view has restored a clip to the clipboard.
+    func pick() {
         self.performPaste()
     }
 
@@ -216,7 +209,7 @@ private struct HistoryPanelRoot: View {
                 get: { self.controller.isPresented },
                 set: { self.controller.isPresented = $0 }),
             surface: .overlay,
-            onPick: { self.controller.pick($0) },
+            onPick: { self.controller.pick() },
             onPasteCurrent: { self.controller.pasteCurrent() })
             .background(.regularMaterial)
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))

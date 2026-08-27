@@ -99,7 +99,7 @@ public struct MarkdownConverter: Sendable {
     public func renderHTMLFragment(_ markdown: String) -> String? {
         cmark_gfm_core_extensions_ensure_registered()
 
-        let options: Int32 = 0 // CMARK_OPT_DEFAULT
+        let options: Int32 = 0 // CMARK_OPT_* macros do not import into Swift.
         guard let parser = cmark_parser_new(options) else { return nil }
         defer { cmark_parser_free(parser) }
 

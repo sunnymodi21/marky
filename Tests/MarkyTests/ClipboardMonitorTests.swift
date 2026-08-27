@@ -144,13 +144,24 @@ import Testing
         let actions = ClipboardActions(monitor: monitor, pasteboard: service)
         history.recordText("original clipping")
 
-        actions.copyEditedText("edited clipping", recordingIn: history)
+        actions.copyAndRecordText("edited clipping", in: history)
 
         #expect(pasteboard.string(forType: .string) == "edited clipping")
         #expect(pasteboard.types?.contains(PasteboardService.markerType) == true)
         #expect(history.entries.count == 2)
         #expect(history.entries.first?.content == .text("edited clipping"))
         #expect(history.entries.contains { $0.content == .text("original clipping") })
+    }
+
+    @Test func consumingLatestOwnWritePrunesOlderCounts() {
+        let (_, service, _, _) = self.makeMonitor()
+        service.writePlainText("first")
+        let firstCount = service.changeCount
+        service.writePlainText("second")
+        let secondCount = service.changeCount
+
+        #expect(service.consumeIgnoredChange(secondCount))
+        #expect(!service.consumeIgnoredChange(firstCount))
     }
 
     @Test func ellipsizeKeepsHeadAndTail() {

@@ -5,7 +5,7 @@ import Foundation
 /// Positive cues add to a score; negative gates reject outright (shell commands,
 /// source code, bare URLs). The score is compared against the config's threshold.
 public struct MarkdownDetector: Sendable {
-    private static let knownCommandPrefixes: [String] = [
+    private static let knownCommandPrefixes: Set<String> = [
         "sudo", "./", "~/", "apt", "brew", "git", "python", "pip", "pnpm", "npm", "yarn", "cargo",
         "bundle", "rails", "go", "make", "xcodebuild", "swift", "kubectl", "docker", "podman", "aws",
         "gcloud", "az", "ls", "cd", "cat", "echo", "env", "export", "open", "node", "java", "ruby",
@@ -24,21 +24,33 @@ public struct MarkdownDetector: Sendable {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return 0 }
 
-        let lines = trimmed.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline)
+        let lines = trimmed.split(
+            maxSplits: config.maxLines,
+            omittingEmptySubsequences: false,
+            whereSeparator: \.isNewline)
         guard lines.count <= config.maxLines else { return 0 }
 
         if self.isBareURL(trimmed) { return 0 }
-        if self.looksLikeShellCommand(trimmed, lines: lines) { return 0 }
+
+        let hasBold = self.hasBold(trimmed)
+        let hasLink = self.hasLink(trimmed)
+        let hasTable = self.hasTable(lines)
+        if self.looksLikeShellCommand(
+            lines: lines,
+            hasUnambiguousMarkdownCue: hasBold || hasLink || hasTable)
+        {
+            return 0
+        }
 
         var score = 0
 
         // Strong cues (2 points each)
         if self.hasFencedCodeBlock(lines) { score += 2 }
         if self.hasATXHeading(lines) { score += 2 }
-        if self.hasLink(trimmed) { score += 2 }
+        if hasLink { score += 2 }
         // A pipe table with a separator row is unambiguous markdown.
-        if self.hasTable(lines) { score += 3 }
-        if self.hasBold(trimmed) { score += 2 }
+        if hasTable { score += 3 }
+        if hasBold { score += 2 }
 
         // Moderate cues (1 point each)
         if self.hasList(lines) { score += 1 }
@@ -131,20 +143,24 @@ public struct MarkdownDetector: Sendable {
         return text.range(of: #"^https?://\S+$"#, options: .regularExpression) != nil
     }
 
-    private func looksLikeShellCommand(_ text: String, lines: [Substring]) -> Bool {
-        // Markdown markup anywhere disqualifies the shell-command gate;
-        // headings are the exception (`# foo` is ambiguous with a comment/prompt).
+    private func looksLikeShellCommand(
+        lines: [Substring],
+        hasUnambiguousMarkdownCue: Bool) -> Bool
+    {
+        // Unambiguous Markdown cues disqualify the shell-command gate. Headings
+        // remain ambiguous with comments and prompts.
         let nonEmpty = lines.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
         guard !nonEmpty.isEmpty else { return false }
 
-        if self.hasBold(text) || self.hasLink(text) || self.hasTable(lines) { return false }
+        if hasUnambiguousMarkdownCue { return false }
 
         let commandish = nonEmpty.count { line in
             let t = line.trimmingCharacters(in: .whitespaces)
             if t.hasPrefix("$ ") { return true }
             if t.contains("\\") && t.hasSuffix("\\") { return true }
             guard let firstToken = t.split(separator: " ").first?.lowercased() else { return false }
-            guard Self.knownCommandPrefixes.contains(where: { firstToken == $0 || firstToken.hasPrefix($0 + "/") })
+            guard Self.knownCommandPrefixes.contains(firstToken)
+                    || Self.knownCommandPrefixes.contains(where: { firstToken.hasPrefix($0 + "/") })
             else { return false }
             // `git` alone could be prose ("git is great."); require flags/paths/pipes.
             return t.range(of: #"(\s--?[A-Za-z]|[|><]|/)"#, options: .regularExpression) != nil

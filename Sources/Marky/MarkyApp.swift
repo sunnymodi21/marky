@@ -36,7 +36,6 @@ struct MarkyApp: App {
             settings: settings,
             history: history,
             monitor: monitor,
-            pasteboard: pasteboardService,
             actions: actions,
             permissions: permissions)
         hotkeys.onOpenHistory = { [weak historyPanel] in historyPanel?.toggle() }
@@ -77,9 +76,6 @@ struct MarkyApp: App {
         .onChange(of: self.monitor.convertPulseID) { _, _ in
             self.pulseStatusItem()
         }
-        // Hotkey toggles the window via hotkeys.onOpenHistory (set in init) — a direct
-        // call, not this scene observer, which may not fire when the menu isn't open.
-
         Settings {
             SettingsView(
                 settings: self.settings,

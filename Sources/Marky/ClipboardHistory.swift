@@ -101,11 +101,6 @@ final class ClipboardHistoryStore: ObservableObject {
             .appendingPathComponent("history.json")
     }
 
-    /// Entries shown in the menu (CopyClip's "display" limit vs "remember" limit).
-    var displayEntries: [ClipboardEntry] {
-        Array(self.entries.prefix(max(1, self.settings.historyDisplayLimit)))
-    }
-
     /// Case-insensitive substring search over text entries.
     /// An empty query returns the full history (images included).
     /// Pinned entries always sort to the top of the results.
@@ -159,7 +154,7 @@ final class ClipboardHistoryStore: ObservableObject {
         if let existing = self.entries.firstIndex(where: { $0.content == content }) {
             preservedPin = self.entries[existing].pinned
             let removed = self.entries.remove(at: existing)
-            self.discardImageStorage(for: removed.id)
+            self.discardImageStorage(for: removed)
         }
         let entry = ClipboardEntry(
             id: UUID(),
@@ -183,7 +178,7 @@ final class ClipboardHistoryStore: ObservableObject {
             let removed = Array(self.entries.suffix(surplus))
             self.entries.removeLast(surplus)
             for entry in removed {
-                self.discardImageStorage(for: entry.id)
+                self.discardImageStorage(for: entry)
             }
         }
     }
@@ -202,39 +197,16 @@ final class ClipboardHistoryStore: ObservableObject {
 
     func delete(_ entry: ClipboardEntry) {
         self.entries.removeAll { $0.id == entry.id }
-        self.discardImageStorage(for: entry.id)
+        self.discardImageStorage(for: entry)
         self.save()
     }
 
     func clear() {
         for entry in self.entries {
-            self.discardImageStorage(for: entry.id)
+            self.discardImageStorage(for: entry)
         }
         self.entries.removeAll()
         self.saveNow()
-    }
-
-    // MARK: - Restore (click-to-copy)
-
-    /// Writes a history entry back to the pasteboard. The monitor observes the
-    /// change like any other copy, so the entry moves to the top of the history
-    /// and markdown text gets auto-converted as usual.
-    func restore(_ entry: ClipboardEntry, to pasteboard: NSPasteboard) {
-        switch entry.content {
-        case let .text(text):
-            pasteboard.clearContents()
-            pasteboard.setString(text, forType: .string)
-        case .image:
-            guard let pngData = self.pngData(for: entry) else {
-                historyLogger.error("Missing image data for history entry \(entry.id)")
-                return
-            }
-            pasteboard.clearContents()
-            pasteboard.setData(pngData, forType: .png)
-            if let tiff = NSBitmapImageRep(data: pngData)?.tiffRepresentation {
-                pasteboard.setData(tiff, forType: .tiff)
-            }
-        }
     }
 
     // MARK: - Image data access
@@ -362,7 +334,6 @@ final class ClipboardHistoryStore: ObservableObject {
             }
             return nil
         }
-        // Sort loaded entries: pinned first, then by date.
         self.sortEntries()
         if needsResave {
             self.save()
@@ -462,7 +433,9 @@ final class ClipboardHistoryStore: ObservableObject {
     }
 
     /// Removes every stored copy of an entry's image bytes (file, caches, fallback).
-    private func discardImageStorage(for id: UUID) {
+    private func discardImageStorage(for entry: ClipboardEntry) {
+        guard case .image = entry.content else { return }
+        let id = entry.id
         self.inMemoryImages[id] = nil
         self.thumbnailCache.removeObject(forKey: id as NSUUID)
         self.imageDataCache.removeObject(forKey: id as NSUUID)

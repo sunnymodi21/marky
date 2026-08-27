@@ -57,8 +57,9 @@ guard let markdown = readInput(), !markdown.trimmingCharacters(in: .whitespacesA
 
 if detectOnly {
     let detector = MarkdownDetector()
-    let score = detector.score(markdown)
-    let isMarkdown = detector.isMarkdown(markdown)
+    let config = ConvertConfig()
+    let score = detector.score(markdown, config: config)
+    let isMarkdown = score >= config.scoreThreshold
     print("score=\(score) markdown=\(isMarkdown)")
     exit(isMarkdown ? 0 : 2)
 }

@@ -40,15 +40,23 @@ final class ClipboardActions: ObservableObject {
         self.monitor.convertTextToRichText(text)
     }
 
-    /// Writes plain text (marked as our own) — e.g. OCR results from image clippings.
-    func writePlainText(_ text: String) {
-        self.pasteboard.writePlainText(text)
+    /// Restores a history entry through the marked pasteboard write path.
+    @discardableResult
+    func restore(_ entry: ClipboardEntry, from history: ClipboardHistoryStore) -> Bool {
+        switch entry.content {
+        case let .text(text):
+            self.pasteboard.writePlainText(text)
+        case .image:
+            guard let pngData = history.pngData(for: entry) else { return false }
+            self.pasteboard.writeImagePNG(pngData)
+        }
+        return true
     }
 
-    /// Copies a non-destructively edited clipping and explicitly records it.
+    /// Copies text and explicitly records it in history.
     /// Marky's marked pasteboard writes are skipped by the monitor, so the
     /// history insertion must happen as part of the same user action.
-    func copyEditedText(_ text: String, recordingIn history: ClipboardHistoryStore) {
+    func copyAndRecordText(_ text: String, in history: ClipboardHistoryStore) {
         self.pasteboard.writePlainText(text)
         history.recordText(text)
     }

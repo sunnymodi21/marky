@@ -6,6 +6,11 @@ import Foundation
 /// matching user-defined ignore patterns. Pure policy — no pasteboard IO.
 @MainActor
 final class ClipboardPolicy {
+    private static let sensitiveTypes: Set<NSPasteboard.PasteboardType> = [
+        NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType"),
+        NSPasteboard.PasteboardType("org.nspasteboard.TransientType"),
+    ]
+
     private let settings: AppSettings
     private let frontmostBundleID: () -> String?
 
@@ -25,10 +30,7 @@ final class ClipboardPolicy {
 
     /// Standard nspasteboard.org types used by password managers and ephemeral copies.
     func isSensitive(types: [NSPasteboard.PasteboardType]?) -> Bool {
-        let concealed = NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")
-        let transient = NSPasteboard.PasteboardType("org.nspasteboard.TransientType")
-        let types = types ?? []
-        return types.contains(concealed) || types.contains(transient)
+        types?.contains(where: Self.sensitiveTypes.contains) == true
     }
 
     /// True when the frontmost app is in the user's exclusion list.
@@ -39,8 +41,8 @@ final class ClipboardPolicy {
 
     /// True when the clipboard text matches any user-defined ignore regex pattern.
     func matchesIgnorePatterns(_ text: String) -> Bool {
+        let range = NSRange(text.startIndex..., in: text)
         for regex in self.compiledIgnoreRegexes() {
-            let range = NSRange(text.startIndex..., in: text)
             if regex.firstMatch(in: text, options: [], range: range) != nil {
                 return true
             }

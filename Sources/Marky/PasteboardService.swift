@@ -41,7 +41,9 @@ final class PasteboardService {
 
     /// True (and consumes the registration) when `count` was one of our own writes.
     func consumeIgnoredChange(_ count: Int) -> Bool {
-        self.ignoredChangeCounts.remove(count) != nil
+        let wasIgnored = self.ignoredChangeCounts.remove(count) != nil
+        self.ignoredChangeCounts = self.ignoredChangeCounts.filter { $0 > count }
+        return wasIgnored
     }
 
     // MARK: - Reads
@@ -97,10 +99,7 @@ final class PasteboardService {
         item.setString(result.html, forType: .html)
         item.setString(result.markdown, forType: .string)
         item.setData(Data(), forType: Self.markerType)
-
-        self.pasteboard.clearContents()
-        self.pasteboard.writeObjects([item])
-        self.markOwnWrite()
+        self.write(item)
     }
 
     /// Writes text as the only representation, stripping any rich formatting.
@@ -109,13 +108,27 @@ final class PasteboardService {
         let item = NSPasteboardItem()
         item.setString(text, forType: .string)
         item.setData(Data(), forType: Self.markerType)
+        self.write(item)
+    }
 
+    /// Writes PNG and TIFF image representations with Marky's marker.
+    func writeImagePNG(_ pngData: Data) {
+        let item = NSPasteboardItem()
+        item.setData(pngData, forType: .png)
+        if let tiff = NSBitmapImageRep(data: pngData)?.tiffRepresentation {
+            item.setData(tiff, forType: .tiff)
+        }
+        item.setData(Data(), forType: Self.markerType)
+        self.write(item)
+    }
+
+    // MARK: - Helpers
+
+    private func write(_ item: NSPasteboardItem) {
         self.pasteboard.clearContents()
         self.pasteboard.writeObjects([item])
         self.markOwnWrite()
     }
-
-    // MARK: - Helpers
 
     private static func normalizeLineEndings(_ text: String) -> String {
         text

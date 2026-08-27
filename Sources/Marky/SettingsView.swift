@@ -30,15 +30,12 @@ private struct HistoryPane: View {
     @ObservedObject var settings: AppSettings
     @ObservedObject var history: ClipboardHistoryStore
     @State private var newPattern = ""
-    @State private var patternError: String?
-
-    private var isNewPatternValid: Bool {
-        let trimmed = self.newPattern.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else { return false }
-        return (try? NSRegularExpression(pattern: trimmed, options: [])) != nil
-    }
 
     var body: some View {
+        let trimmedPattern = self.newPattern.trimmingCharacters(in: .whitespaces)
+        let isPatternValid = !trimmedPattern.isEmpty
+            && (try? NSRegularExpression(pattern: trimmedPattern, options: [])) != nil
+
         Form {
             Toggle("Keep clipboard history", isOn: self.$settings.historyEnabled)
             Text("Records text and images you copy. Click an entry in the menu to copy it back.")
@@ -96,28 +93,16 @@ private struct HistoryPane: View {
                     TextField("e.g. ^\\s*(?:AKIA|ghp_)", text: self.$newPattern)
                         .textFieldStyle(.roundedBorder)
                         .font(.system(.caption, design: .monospaced))
-                        .onChange(of: self.newPattern) { _, value in
-                            let trimmed = value.trimmingCharacters(in: .whitespaces)
-                            if trimmed.isEmpty {
-                                self.patternError = nil
-                            } else if (try? NSRegularExpression(pattern: trimmed, options: [])) == nil {
-                                self.patternError = "Invalid regex"
-                            } else {
-                                self.patternError = nil
-                            }
-                        }
                     Button("Add") {
-                        let trimmed = self.newPattern.trimmingCharacters(in: .whitespaces)
-                        guard !trimmed.isEmpty, !self.settings.ignorePatterns.contains(trimmed) else { return }
-                        self.settings.ignorePatterns.append(trimmed)
+                        guard !self.settings.ignorePatterns.contains(trimmedPattern) else { return }
+                        self.settings.ignorePatterns.append(trimmedPattern)
                         self.newPattern = ""
-                        self.patternError = nil
                     }
-                    .disabled(!self.isNewPatternValid)
+                    .disabled(!isPatternValid)
                 }
 
-                if let error = self.patternError {
-                    Text(error)
+                if !trimmedPattern.isEmpty, !isPatternValid {
+                    Text("Invalid regex")
                         .font(.caption)
                         .foregroundStyle(.red)
                 }

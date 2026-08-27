@@ -7,9 +7,7 @@ import SwiftUI
 /// in what a pick does (copy-and-close vs paste into the prior app) and whether
 /// the convert/"Paste as" controls are shown (overlay only).
 enum MenuSurface {
-    /// The menu-bar dropdown: picking an entry copies it and closes the panel.
     case menuDropdown
-    /// The standalone floating history window: picking an entry pastes it.
     case overlay
 }
 
@@ -24,23 +22,17 @@ struct MenuContentView: View {
 
     var surface: MenuSurface = .menuDropdown
 
-    /// Overlay only: invoked after a clip is restored to the clipboard so the
-    /// host can paste it (⌘V) into the previously focused app.
-    var onPick: ((ClipboardEntry) -> Void)?
+    /// Overlay only: invoked after a clip is restored to the clipboard.
+    var onPick: (() -> Void)?
 
     /// Overlay only: pastes whatever is currently on the clipboard into the
     /// previously focused app. Used by the "Paste as" format buttons after
     /// they rewrite the clipboard.
     var onPasteCurrent: (() -> Void)?
 
-    /// History entry currently being OCRed (shows a spinner on that row).
     @State private var recognizingEntryID: UUID?
-
-    /// Entry that was just copied (shows a brief checkmark before closing).
     @State private var copiedEntryID: UUID?
-
-    /// Text clipping currently being edited in the non-destructive editor.
-    @State private var editingClip: EditableClip?
+    @State private var editingText: String?
 
     @State private var showClearConfirmation = false
 
@@ -73,20 +65,18 @@ struct MenuContentView: View {
 
     /// ScrollView has no intrinsic height inside the MenuBarExtra panel and
     /// collapses to zero with only maxHeight, so size it from the row count.
-    /// Accounts for section headers and any expanded rows.
-    private var listHeight: CGFloat {
+    private func listHeight(for results: [ClipboardEntry]) -> CGFloat {
         let rowHeight: CGFloat = 38
         let headerHeight: CGFloat = 24
-        var total: CGFloat = CGFloat(self.results.count) * rowHeight + 8
-        total += CGFloat(self.sectionHeaderCount) * headerHeight
+        var total: CGFloat = CGFloat(results.count) * rowHeight + 8
+        total += CGFloat(self.sectionHeaderCount(in: results)) * headerHeight
         return min(280, total)
     }
 
-    private var sectionHeaderCount: Int {
-        guard !self.results.isEmpty else { return 0 }
+    private func sectionHeaderCount(in results: [ClipboardEntry]) -> Int {
         var count = 0
-        for index in self.results.indices {
-            if self.sectionHeader(for: index, in: self.results) != nil {
+        for index in results.indices {
+            if self.sectionHeader(for: index, in: results) != nil {
                 count += 1
             }
         }
@@ -94,10 +84,12 @@ struct MenuContentView: View {
     }
 
     var body: some View {
+        let results = self.editingText == nil && self.settings.historyEnabled ? self.results : []
+
         Group {
-            if let clip = self.editingClip {
+            if let editingText = self.editingText {
                 ClipEditorView(
-                    originalText: clip.text,
+                    originalText: editingText,
                     canPaste: self.surface == .overlay,
                     onBack: { self.dismissEditor() },
                     onCopy: { self.commitEdit($0, paste: false) },
@@ -108,7 +100,7 @@ struct MenuContentView: View {
 
                     if self.settings.historyEnabled {
                         Divider()
-                        self.historyList
+                        self.historyList(results)
                     }
 
                     // Convert/paste actions live only in the standalone paste overlay,
@@ -149,24 +141,24 @@ struct MenuContentView: View {
             }
         }
         .onKeyPress(.downArrow) {
-            guard self.editingClip == nil else { return .ignored }
+            guard self.editingText == nil else { return .ignored }
             self.moveSelection(.down)
             return .handled
         }
         .onKeyPress(.upArrow) {
-            guard self.editingClip == nil else { return .ignored }
+            guard self.editingText == nil else { return .ignored }
             self.moveSelection(.up)
             return .handled
         }
         .onKeyPress(.return) {
-            guard self.editingClip == nil else { return .ignored }
-            if let index = self.selectedIndex, self.results.indices.contains(index) {
-                self.copy(self.results[index])
+            guard self.editingText == nil else { return .ignored }
+            if let index = self.selectedIndex, results.indices.contains(index) {
+                self.copy(results[index])
             }
             return .handled
         }
         .onKeyPress(.escape) {
-            if self.editingClip != nil {
+            if self.editingText != nil {
                 self.dismissEditor()
             } else {
                 self.isPresented = false
@@ -204,8 +196,8 @@ struct MenuContentView: View {
     // MARK: - History
 
     @ViewBuilder
-    private var historyList: some View {
-        if self.results.isEmpty {
+    private func historyList(_ results: [ClipboardEntry]) -> some View {
+        if results.isEmpty {
             VStack(spacing: 8) {
                 Image(systemName: self.isSearching ? "magnifyingglass" : "doc.on.clipboard")
                     .font(.system(size: 28))
@@ -225,8 +217,8 @@ struct MenuContentView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 1) {
-                        ForEach(Array(self.results.enumerated()), id: \.element.id) { index, entry in
-                            if let header = self.sectionHeader(for: index, in: self.results) {
+                        ForEach(Array(results.enumerated()), id: \.element.id) { index, entry in
+                            if let header = self.sectionHeader(for: index, in: results) {
                                 Text(header)
                                     .font(.caption2.weight(.semibold))
                                     .foregroundStyle(.tertiary)
@@ -234,20 +226,21 @@ struct MenuContentView: View {
                                     .padding(.top, 6)
                                     .padding(.bottom, 2)
                             }
+                            let fullText = self.fullText(for: entry)
                             HistoryRow(
                                 title: self.history.title(for: entry),
                                 date: entry.date,
                                 thumbnail: self.history.thumbnail(for: entry),
-                                fullText: self.fullText(for: entry),
+                                fullText: fullText,
                                 isRecognizing: self.recognizingEntryID == entry.id,
                                 isCopied: self.copiedEntryID == entry.id,
                                 isSelected: self.selectedIndex == index,
                                 isPinned: entry.pinned,
                                 isMarkdown: entry.isMarkdown,
                                 action: { self.copy(entry) },
-                                onCopyText: self.isImage(entry) ? { self.copyTextFromImage(entry) } : nil,
-                                onCopyRich: self.fullText(for: entry) != nil ? { self.copyAsRichText(entry) } : nil,
-                                onEdit: self.fullText(for: entry) != nil ? { self.edit(entry) } : nil,
+                                onCopyText: fullText == nil ? { self.copyTextFromImage(entry) } : nil,
+                                onCopyRich: fullText != nil ? { self.copyAsRichText(entry) } : nil,
+                                onEdit: fullText != nil ? { self.edit(entry) } : nil,
                                 onPin: { self.history.togglePin(entry) },
                                 onDelete: { self.history.delete(entry) })
                             .id(entry.id)
@@ -255,7 +248,7 @@ struct MenuContentView: View {
                     }
                     .padding(4)
                 }
-                .frame(height: self.listHeight)
+                .frame(height: self.listHeight(for: results))
                 .onAppear { self.scrollProxy = proxy }
             }
             .id(self.scrollResetID)
@@ -263,7 +256,7 @@ struct MenuContentView: View {
             HStack {
                 Text(
                     self.isSearching
-                        ? "\(self.results.count) of \(self.history.entries.count) clippings"
+                        ? "\(results.count) of \(self.history.entries.count) clippings"
                         : "Click a clipping to copy it")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
@@ -285,19 +278,21 @@ struct MenuContentView: View {
         // paste into the prior app. When auto-convert is on and the clip is
         // Markdown, paste it as rich text; otherwise paste it verbatim.
         if self.surface == .overlay {
+            let restored: Bool
             if self.settings.autoConvertEnabled,
                case let .text(text) = entry.content,
                entry.isMarkdown,
                self.actions.convertTextToRichText(text)
             {
-                // convertTextToRichText wrote rich text to the clipboard (and marked it).
+                restored = true
             } else {
-                self.history.restore(entry, to: .general)
+                restored = self.actions.restore(entry, from: self.history)
             }
-            self.onPick?(entry)
+            guard restored else { return }
+            self.onPick?()
             return
         }
-        self.history.restore(entry, to: .general)
+        guard self.actions.restore(entry, from: self.history) else { return }
         self.copiedEntryID = entry.id
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
             self.copiedEntryID = nil
@@ -316,18 +311,19 @@ struct MenuContentView: View {
 
         switch event.keyCode {
         case 125: // Down Arrow
-            guard self.editingClip == nil else { return false }
+            guard self.editingText == nil else { return false }
             self.moveSelection(.down)
         case 126: // Up Arrow
-            guard self.editingClip == nil else { return false }
+            guard self.editingText == nil else { return false }
             self.moveSelection(.up)
         case 36, 76: // Return and numeric-keypad Enter
-            guard self.editingClip == nil else { return false }
-            if let index = self.selectedIndex, self.results.indices.contains(index) {
-                self.copy(self.results[index])
+            guard self.editingText == nil else { return false }
+            let results = self.results
+            if let index = self.selectedIndex, results.indices.contains(index) {
+                self.copy(results[index])
             }
         case 53: // Escape
-            if self.editingClip != nil {
+            if self.editingText != nil {
                 self.dismissEditor()
             } else {
                 self.isPresented = false
@@ -340,14 +336,15 @@ struct MenuContentView: View {
     }
 
     private func moveSelection(_ direction: Direction) {
-        guard !self.results.isEmpty else { return }
+        let results = self.results
+        guard !results.isEmpty else { return }
 
         let current = self.selectedIndex ?? -1
         let next: Int
 
         switch direction {
         case .down:
-            next = min(current + 1, self.results.count - 1)
+            next = min(current + 1, results.count - 1)
         case .up:
             if current <= 0 {
                 // At the top: return focus to the search field.
@@ -368,17 +365,13 @@ struct MenuContentView: View {
     }
 
     private func scrollToSelection() {
-        guard let index = self.selectedIndex, self.results.indices.contains(index) else { return }
-        self.scrollProxy?.scrollTo(self.results[index].id, anchor: .center)
+        let results = self.results
+        guard let index = self.selectedIndex, results.indices.contains(index) else { return }
+        self.scrollProxy?.scrollTo(results[index].id, anchor: .center)
     }
 
     private enum Direction {
         case up, down
-    }
-
-    private func isImage(_ entry: ClipboardEntry) -> Bool {
-        if case .image = entry.content { return true }
-        return false
     }
 
     /// Full text of a text entry for the expand/preview, or nil for images.
@@ -428,8 +421,7 @@ struct MenuContentView: View {
             guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 return
             }
-            self.actions.writePlainText(text)
-            self.history.recordText(text)
+            self.actions.copyAndRecordText(text, in: self.history)
             self.isPresented = false
         }
     }
@@ -446,15 +438,15 @@ struct MenuContentView: View {
     /// clipping; the original history entry is never mutated.
     private func edit(_ entry: ClipboardEntry) {
         guard case let .text(text) = entry.content else { return }
-        self.editingClip = EditableClip(id: entry.id, text: text)
+        self.editingText = text
     }
 
     private func dismissEditor() {
-        self.editingClip = nil
+        self.editingText = nil
     }
 
     private func commitEdit(_ text: String, paste: Bool) {
-        self.actions.copyEditedText(text, recordingIn: self.history)
+        self.actions.copyAndRecordText(text, in: self.history)
         self.dismissEditor()
 
         if paste {
@@ -692,13 +684,6 @@ private struct HistoryRow: View {
             Button("Delete", role: .destructive) { self.onDelete() }
         }
     }
-}
-
-// MARK: - Clipping editor
-
-private struct EditableClip: Identifiable {
-    let id: UUID
-    let text: String
 }
 
 private struct ClipEditorView: View {
