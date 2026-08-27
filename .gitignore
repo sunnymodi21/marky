@@ -9,3 +9,5 @@ sparkle_eddsa.key
 .wrangler/
 workers/**/node_modules/
 workers/download/public/*.zip
+website/*.mp4
+website/*.jpg

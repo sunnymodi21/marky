@@ -412,10 +412,108 @@
   }
   footer .wordmark { font-size: 14px; }
 
+  /* Demos */
+  .demo-showcase {
+    margin-top: 38px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  .demo-window-bar {
+    min-height: 48px;
+    display: flex; align-items: center; gap: 12px;
+    padding: 0 16px;
+    border-bottom: 1px solid var(--line);
+    color: var(--muted); font-family: var(--mono); font-size: 11px;
+  }
+  .window-dots { display: flex; gap: 6px; }
+  .window-dots span {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--line);
+  }
+  .window-dots span:first-child { background: #FF5F57; }
+  .window-dots span:nth-child(2) { background: #FEBC2E; }
+  .window-dots span:last-child { background: #28C840; }
+  .demo-window-title {
+    flex: 1; overflow: hidden;
+    white-space: nowrap; text-overflow: ellipsis;
+    text-align: center; color: var(--ink);
+  }
+  .demo-looping {
+    display: flex; align-items: center; gap: 6px;
+    white-space: nowrap;
+  }
+  .demo-looping::before {
+    content: ""; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+  }
+  .demo-stage {
+    padding: 18px;
+    background:
+      radial-gradient(circle at 15% 10%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 34%),
+      var(--code-bg);
+  }
+  .demo-video-panel {
+    overflow: hidden;
+    border: 1px solid color-mix(in srgb, var(--line) 75%, transparent);
+    border-radius: 12px;
+    background: #0F1113;
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.2);
+  }
+  .demo-video-panel[hidden] { display: none; }
+  .demo-video-panel video {
+    width: 100%; aspect-ratio: 16 / 9;
+    display: block; object-fit: cover;
+  }
+  .demo-tabs {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    border-top: 1px solid var(--line);
+  }
+  .demo-tab {
+    position: relative;
+    min-width: 0; padding: 20px;
+    border: 0; border-right: 1px solid var(--line);
+    background: transparent; color: var(--ink);
+    text-align: left; cursor: pointer;
+    font: inherit;
+  }
+  .demo-tab:last-child { border-right: 0; }
+  .demo-tab::before {
+    content: ""; position: absolute;
+    top: -1px; left: 20px; right: 20px; height: 2px;
+    border-radius: 2px;
+    background: transparent;
+  }
+  .demo-tab:hover { background: var(--code-bg); }
+  .demo-tab[aria-selected="true"] {
+    background: color-mix(in srgb, var(--accent) 7%, var(--card));
+  }
+  .demo-tab[aria-selected="true"]::before { background: var(--accent); }
+  .demo-tab-kicker {
+    display: block; margin-bottom: 6px;
+    color: var(--accent); font-family: var(--mono);
+    font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+  }
+  .demo-tab strong {
+    display: block; margin-bottom: 4px;
+    font-size: 15px; line-height: 1.35;
+  }
+  .demo-tab-copy {
+    display: block; color: var(--muted);
+    font-size: 12.5px; line-height: 1.45;
+  }
+
   @media (max-width: 800px) {
     .hero { grid-template-columns: 1fr; gap: 40px; padding: 48px 0 64px; }
     .steps, .workflows, .features, .history-split { grid-template-columns: 1fr; }
     .download-grid { grid-template-columns: 1fr; }
+    .demo-tabs { grid-template-columns: 1fr; }
+    .demo-tab { border-right: 0; border-bottom: 1px solid var(--line); }
+    .demo-tab:last-child { border-bottom: 0; }
+    .demo-stage { padding: 10px; }
     .nav-links a:not(.btn) { display: none; }
   }
 </style>
@@ -424,6 +522,7 @@
   <nav>
     <span class="wordmark"><span class="tick">##</span> Marky</span>
     <div class="nav-links">
+      <a href="#demos">Demos</a>
       <a href="#how">How it works</a>
       <a href="#history">History</a>
       <a href="#use-cases">Use cases</a>
@@ -479,6 +578,67 @@
       </div>
     </div>
   </header>
+
+  <section id="demos">
+    <p class="section-label">See it in action</p>
+    <h2>Three everyday workflows. One tiny app.</h2>
+    <p class="section-intro">
+      From clean rich text to clips you thought you had lost, Marky keeps the
+      whole workflow one shortcut away.
+    </p>
+    <div class="demo-showcase">
+      <div class="demo-window-bar" aria-hidden="true">
+        <span class="window-dots"><span></span><span></span><span></span></span>
+        <span class="demo-window-title" id="demo-window-title">Markdown → rich text</span>
+        <span class="demo-looping">Live demo</span>
+      </div>
+      <div class="demo-stage">
+        <div class="demo-video-panel" id="demo-rich" role="tabpanel" aria-labelledby="tab-rich">
+          <video autoplay muted loop playsinline controls
+            poster="https://download.marky.click/videos/marky-markdown-to-rich-text.jpg"
+            aria-label="Markdown copied from the terminal pastes as rich text">
+            <source src="https://download.marky.click/videos/marky-markdown-to-rich-text.mp4" type="video/mp4">
+          </video>
+        </div>
+        <div class="demo-video-panel" id="demo-history" role="tabpanel" aria-labelledby="tab-history" hidden>
+          <video muted loop playsinline controls preload="metadata"
+            poster="https://download.marky.click/videos/marky-paste-from-shortcut-history.jpg"
+            aria-label="Paste a clip from clipboard history with the keyboard shortcut">
+            <source src="https://download.marky.click/videos/marky-paste-from-shortcut-history.mp4" type="video/mp4">
+          </video>
+        </div>
+        <div class="demo-video-panel" id="demo-ocr" role="tabpanel" aria-labelledby="tab-ocr" hidden>
+          <video muted loop playsinline controls preload="metadata"
+            poster="https://download.marky.click/videos/marky-ocr-from-image.jpg"
+            aria-label="Extract text from a copied image with on-device OCR">
+            <source src="https://download.marky.click/videos/marky-ocr-from-image.mp4" type="video/mp4">
+          </video>
+        </div>
+      </div>
+      <div class="demo-tabs" role="tablist" aria-label="Marky feature demos">
+        <button class="demo-tab" id="tab-rich" type="button" role="tab"
+          aria-selected="true" aria-controls="demo-rich" data-title="Markdown → rich text">
+          <span class="demo-tab-kicker">01 · Automatic</span>
+          <strong>Markdown → rich text</strong>
+          <span class="demo-tab-copy">Copy from your terminal. Paste beautifully formatted text anywhere.</span>
+        </button>
+        <button class="demo-tab" id="tab-history" type="button" role="tab"
+          aria-selected="false" aria-controls="demo-history" tabindex="-1"
+          data-title="Paste from clipboard history">
+          <span class="demo-tab-kicker">02 · ⌥⌘V</span>
+          <strong>Paste from history</strong>
+          <span class="demo-tab-copy">Find any recent clip and paste it without touching the mouse.</span>
+        </button>
+        <button class="demo-tab" id="tab-ocr" type="button" role="tab"
+          aria-selected="false" aria-controls="demo-ocr" tabindex="-1"
+          data-title="On-device screenshot OCR">
+          <span class="demo-tab-kicker">03 · On-device</span>
+          <strong>OCR any screenshot</strong>
+          <span class="demo-tab-copy">Turn text trapped in an image into editable clipboard content.</span>
+        </button>
+      </div>
+    </div>
+  </section>
 
   <section id="how">
     <p class="section-label">How it works</p>
@@ -796,5 +956,48 @@ Fixed login flow…</div>
     <span>© 2026 Sunny Modi · <a href="mailto:sunnymodi21@proton.me">Support</a> · <a href="#">Privacy</a></span>
   </footer>
 </div>
+<script>
+  const demoTabs = [...document.querySelectorAll(".demo-tab")];
+  const demoPanels = [...document.querySelectorAll(".demo-video-panel")];
+  const demoTitle = document.querySelector("#demo-window-title");
+
+  function activateDemo(tab, moveFocus = true) {
+    demoTabs.forEach((item) => {
+      const isActive = item === tab;
+      item.setAttribute("aria-selected", String(isActive));
+      item.tabIndex = isActive ? 0 : -1;
+    });
+
+    demoPanels.forEach((panel) => {
+      const isActive = panel.id === tab.getAttribute("aria-controls");
+      const video = panel.querySelector("video");
+      panel.hidden = !isActive;
+
+      if (isActive) {
+        video.currentTime = 0;
+        video.play().catch(() => {});
+      } else {
+        video.pause();
+      }
+    });
+
+    demoTitle.textContent = tab.dataset.title;
+    if (moveFocus) tab.focus();
+  }
+
+  demoTabs.forEach((tab, index) => {
+    tab.addEventListener("click", () => activateDemo(tab, false));
+    tab.addEventListener("keydown", (event) => {
+      let nextIndex;
+      if (event.key === "ArrowRight") nextIndex = (index + 1) % demoTabs.length;
+      if (event.key === "ArrowLeft") nextIndex = (index - 1 + demoTabs.length) % demoTabs.length;
+      if (event.key === "Home") nextIndex = 0;
+      if (event.key === "End") nextIndex = demoTabs.length - 1;
+      if (nextIndex === undefined) return;
+      event.preventDefault();
+      activateDemo(demoTabs[nextIndex]);
+    });
+  });
+</script>
 </body>
 </html>
