@@ -80,7 +80,7 @@ for bundle in "$APP/Contents/Resources/"*.bundle; do
     fi
     [ -n "$plist" ] || continue
     if ! /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist" >/dev/null 2>&1; then
-        name="$(basename "$bundle" .bundle | tr -c 'A-Za-z0-9.-' '-')"
+        name="$(basename "$bundle" .bundle | tr '_' '-' | tr -c 'A-Za-z0-9.-' '-' | sed -E 's/-+$//; s/^-+//')"
         /usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string com.sunnymodi.marky.$name" "$plist"
         /usr/libexec/PlistBuddy -c "Add :CFBundleName string $name" "$plist" 2>/dev/null || true
         /usr/libexec/PlistBuddy -c "Add :CFBundlePackageType string BNDL" "$plist" 2>/dev/null || true
@@ -92,7 +92,7 @@ shopt -u nullglob
 
 if [ "$MAS" = "1" ]; then
     /usr/libexec/PlistBuddy -c 'Set :CFBundleShortVersionString 1.0' "$APP/Contents/Info.plist"
-    /usr/libexec/PlistBuddy -c 'Set :CFBundleVersion 4' "$APP/Contents/Info.plist"
+    /usr/libexec/PlistBuddy -c 'Set :CFBundleVersion 5' "$APP/Contents/Info.plist"
     /usr/libexec/PlistBuddy -c 'Delete :SUFeedURL' "$APP/Contents/Info.plist" 2>/dev/null || true
     /usr/libexec/PlistBuddy -c 'Delete :SUPublicEDKey' "$APP/Contents/Info.plist" 2>/dev/null || true
     /usr/libexec/PlistBuddy -c 'Delete :SUEnableAutomaticChecks' "$APP/Contents/Info.plist" 2>/dev/null || true
@@ -182,6 +182,20 @@ if [ "$MAS" != "1" ]; then
     codesign "${CODESIGN_NESTED[@]}" "${SIGN_ARGS[@]}" "$SPARKLE_VER/Autoupdate"
     codesign "${CODESIGN_NESTED[@]}" "${SIGN_ARGS[@]}" "$APP/Contents/Frameworks/Sparkle.framework"
 fi
+
+# Sign SPM resource bundles inside-out (no --deep). KeyboardShortcuts.Recorder
+# loads Bundle.module; an unsigned .bundle makes Bundle(url:) return nil under
+# the MAS hardened runtime and the accessor fatalErrors.
+shopt -s nullglob
+for bundle in "$APP/Contents/Resources/"*.bundle; do
+    if [ "$MAS" = "1" ] || [ "$NOTARIZE" = "1" ]; then
+        codesign --force --options runtime --timestamp "${SIGN_ARGS[@]}" "$bundle"
+    else
+        codesign --force "${SIGN_ARGS[@]}" "$bundle"
+    fi
+done
+shopt -u nullglob
+
 codesign "${CODESIGN_APP[@]}" "${SIGN_ARGS[@]}" "$APP"
 echo "Signed with: $SIGN_LABEL"
 
