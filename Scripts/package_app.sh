@@ -15,6 +15,7 @@
 #   3. keychain profile "marky-notary"
 #      (create via: xcrun notarytool store-credentials marky-notary ...)
 set -euo pipefail
+shopt -s nullglob
 
 CONFIG="${1:-release}"
 MAS=0
@@ -31,22 +32,60 @@ elif [ "${2:-}" = "notarize" ] || [ "${MARKY_NOTARIZE:-0}" = "1" ]; then
 fi
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APP="$ROOT/Marky.app"
+PLIST="$APP/Contents/Info.plist"
+DIST="$ROOT/dist"
+
+# Name of the first valid identity whose description matches the pattern.
+# Extra args (e.g. -p codesigning) are passed through to security.
+find_identity() {
+    security find-identity -v "${@:2}" | awk -F'"' -v pat="$1" '$0 ~ pat {print $2; exit}'
+}
+
+# Credentials (Apple ID / App Store Connect) may live in a gitignored .env.
+load_env() {
+    if [ -f "$ROOT/.env" ]; then
+        set -a
+        # shellcheck disable=SC1091
+        . "$ROOT/.env"
+        set +a
+    fi
+}
 
 cd "$ROOT"
+BUILD_ARGS=(-c "$CONFIG")
 if [ "$MAS" = "1" ]; then
     export MARKY_APP_STORE=1
-    swift build -c "$CONFIG" -Xswiftc -DAPPSTORE
-else
-    swift build -c "$CONFIG"
+    BUILD_ARGS+=(-Xswiftc -DAPPSTORE)
 fi
+swift build "${BUILD_ARGS[@]}"
 
 BUILD_DIR="$(swift build -c "$CONFIG" --show-bin-path)"
+
+# SwiftPM generates dependency resource accessors for command-line executables
+# using Bundle.main.bundleURL. Once the executable is wrapped in a macOS .app,
+# that points at Marky.app/, while valid app resources live in
+# Marky.app/Contents/Resources/. Patch the generated accessor and rebuild so a
+# clean install does not fall back to this development machine's .build path.
+RESOURCE_ACCESSOR="$BUILD_DIR/KeyboardShortcuts.build/DerivedSources/resource_bundle_accessor.swift"
+ACCESSOR_OLD='Bundle.main.bundleURL.appendingPathComponent'
+ACCESSOR_NEW='(Bundle.main.resourceURL ?? Bundle.main.bundleURL).appendingPathComponent'
+if grep -Fqs "$ACCESSOR_OLD" "$RESOURCE_ACCESSOR"; then
+    python3 -c 'import sys, pathlib
+p = pathlib.Path(sys.argv[1])
+p.write_text(p.read_text().replace(sys.argv[2], sys.argv[3]))' \
+        "$RESOURCE_ACCESSOR" "$ACCESSOR_OLD" "$ACCESSOR_NEW"
+    swift build "${BUILD_ARGS[@]}"
+fi
+if ! grep -Fqs "$ACCESSOR_NEW" "$RESOURCE_ACCESSOR"; then
+    echo "error: KeyboardShortcuts resource accessor missing or not patched: $RESOURCE_ACCESSOR" >&2
+    exit 1
+fi
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
 cp "$BUILD_DIR/Marky" "$APP/Contents/MacOS/Marky"
-cp "$ROOT/Info.plist" "$APP/Contents/Info.plist"
+cp "$ROOT/Info.plist" "$PLIST"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 if [ -f "$ROOT/PrivacyInfo.xcprivacy" ]; then
     cp "$ROOT/PrivacyInfo.xcprivacy" "$APP/Contents/Resources/PrivacyInfo.xcprivacy"
@@ -70,49 +109,38 @@ fi
 find "$BUILD_DIR" -maxdepth 1 -name '*.bundle' -exec cp -R {} "$APP/Contents/Resources/" \;
 
 # App Store validation requires every bundled .bundle to have CFBundleIdentifier.
-shopt -s nullglob
 for bundle in "$APP/Contents/Resources/"*.bundle; do
-    plist=""
-    if [ -f "$bundle/Contents/Info.plist" ]; then
-        plist="$bundle/Contents/Info.plist"
-    elif [ -f "$bundle/Info.plist" ]; then
-        plist="$bundle/Info.plist"
-    fi
-    [ -n "$plist" ] || continue
-    if ! /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist" >/dev/null 2>&1; then
+    bplist="$bundle/Contents/Info.plist"
+    [ -f "$bplist" ] || bplist="$bundle/Info.plist"
+    [ -f "$bplist" ] || continue
+    if ! /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$bplist" >/dev/null 2>&1; then
         name="$(basename "$bundle" .bundle | tr '_' '-' | tr -c 'A-Za-z0-9.-' '-' | sed -E 's/-+$//; s/^-+//')"
-        /usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string com.sunnymodi.marky.$name" "$plist"
-        /usr/libexec/PlistBuddy -c "Add :CFBundleName string $name" "$plist" 2>/dev/null || true
-        /usr/libexec/PlistBuddy -c "Add :CFBundlePackageType string BNDL" "$plist" 2>/dev/null || true
-        /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 1" "$plist" 2>/dev/null || true
-        /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string 1.0" "$plist" 2>/dev/null || true
+        /usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string com.sunnymodi.marky.$name" "$bplist"
+        /usr/libexec/PlistBuddy -c "Add :CFBundleName string $name" "$bplist" 2>/dev/null || true
+        /usr/libexec/PlistBuddy -c "Add :CFBundlePackageType string BNDL" "$bplist" 2>/dev/null || true
+        /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 1" "$bplist" 2>/dev/null || true
+        /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string 1.0" "$bplist" 2>/dev/null || true
     fi
 done
-shopt -u nullglob
 
 if [ "$MAS" = "1" ]; then
-    /usr/libexec/PlistBuddy -c 'Set :CFBundleShortVersionString 1.0' "$APP/Contents/Info.plist"
-    /usr/libexec/PlistBuddy -c 'Set :CFBundleVersion 5' "$APP/Contents/Info.plist"
-    /usr/libexec/PlistBuddy -c 'Delete :SUFeedURL' "$APP/Contents/Info.plist" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c 'Delete :SUPublicEDKey' "$APP/Contents/Info.plist" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c 'Delete :SUEnableAutomaticChecks' "$APP/Contents/Info.plist" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c 'Delete :ITSAppUsesNonExemptEncryption' "$APP/Contents/Info.plist" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c 'Add :ITSAppUsesNonExemptEncryption bool false' "$APP/Contents/Info.plist"
+    /usr/libexec/PlistBuddy -c 'Set :CFBundleShortVersionString 1.0' "$PLIST"
+    /usr/libexec/PlistBuddy -c 'Set :CFBundleVersion 6' "$PLIST"
+    for key in SUFeedURL SUPublicEDKey SUEnableAutomaticChecks ITSAppUsesNonExemptEncryption; do
+        /usr/libexec/PlistBuddy -c "Delete :$key" "$PLIST" 2>/dev/null || true
+    done
+    /usr/libexec/PlistBuddy -c 'Add :ITSAppUsesNonExemptEncryption bool false' "$PLIST"
     cp "$ROOT/Signing/Marky_Mac_App_Store.provisionprofile" "$APP/Contents/embedded.provisionprofile"
     xattr -cr "$APP"
-fi
-
-# Embed Sparkle.framework (XPC helpers + Autoupdate live inside it). SPM links
-# Sparkle but does not copy the framework into the app bundle.
-SPARKLE_FW=""
-for candidate in "$ROOT/.build/artifacts/sparkle/Sparkle/Sparkle.xcframework"/macos-*/Sparkle.framework; do
-    if [ -d "$candidate" ]; then
+else
+    # Embed Sparkle.framework (XPC helpers + Autoupdate live inside it). SPM links
+    # Sparkle but does not copy the framework into the app bundle.
+    SPARKLE_FW=""
+    for candidate in "$ROOT/.build/artifacts/sparkle/Sparkle/Sparkle.xcframework"/macos-*/Sparkle.framework; do
         SPARKLE_FW="$candidate"
         break
-    fi
-done
-if [ "$MAS" != "1" ]; then
-    if [ -z "$SPARKLE_FW" ] || [ ! -d "$SPARKLE_FW" ]; then
+    done
+    if [ ! -d "$SPARKLE_FW" ]; then
         echo "error: Sparkle.framework not found under .build/artifacts/sparkle" >&2
         echo "       Run: swift package resolve" >&2
         exit 1
@@ -140,22 +168,25 @@ fi
 SIGN_ID="${MARKY_SIGN_ID:-}"
 if [ -z "$SIGN_ID" ]; then
     if [ "$MAS" = "1" ]; then
-        SIGN_ID="$(security find-identity -v -p codesigning | awk -F'"' '/3rd Party Mac Developer Application/{print $2; exit}')"
+        SIGN_ID="$(find_identity '3rd Party Mac Developer Application' -p codesigning)"
     else
-        SIGN_ID="$(security find-identity -v -p codesigning | awk -F'"' '/Developer ID Application/{print $2; exit}')"
-        [ -z "$SIGN_ID" ] && SIGN_ID="$(security find-identity -v -p codesigning | awk -F'"' '/Apple Development/{print $2; exit}')"
+        SIGN_ID="$(find_identity 'Developer ID Application' -p codesigning)"
+        [ -z "$SIGN_ID" ] && SIGN_ID="$(find_identity 'Apple Development' -p codesigning)"
     fi
 fi
 
 # Sparkle forbids --deep on the outer app: it can strip XPC entitlements.
 # Sign nested Sparkle helpers inside-out, then the app bundle without --deep.
 CODESIGN_NESTED=(--force --preserve-metadata=entitlements,requirements,flags,runtime)
+CODESIGN_BUNDLE=(--force)
 CODESIGN_APP=(--force)
 if [ "$MAS" = "1" ]; then
+    CODESIGN_BUNDLE+=(--options runtime --timestamp)
     CODESIGN_APP+=(--options runtime --timestamp --entitlements "$ROOT/Signing/Marky.entitlements")
 elif [ "$NOTARIZE" = "1" ]; then
     # Notarization requires the hardened runtime and a secure timestamp.
     CODESIGN_NESTED+=(--options runtime --timestamp)
+    CODESIGN_BUNDLE+=(--options runtime --timestamp)
     CODESIGN_APP+=(--options runtime --timestamp)
 elif [ "${MARKY_HARDENED_RUNTIME:-0}" = "1" ]; then
     CODESIGN_NESTED+=(--options runtime)
@@ -176,25 +207,18 @@ fi
 
 if [ "$MAS" != "1" ]; then
     SPARKLE_VER="$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
-    codesign "${CODESIGN_NESTED[@]}" "${SIGN_ARGS[@]}" "$SPARKLE_VER/XPCServices/Installer.xpc"
-    codesign "${CODESIGN_NESTED[@]}" "${SIGN_ARGS[@]}" "$SPARKLE_VER/XPCServices/Downloader.xpc"
-    codesign "${CODESIGN_NESTED[@]}" "${SIGN_ARGS[@]}" "$SPARKLE_VER/Updater.app"
-    codesign "${CODESIGN_NESTED[@]}" "${SIGN_ARGS[@]}" "$SPARKLE_VER/Autoupdate"
+    for helper in XPCServices/Installer.xpc XPCServices/Downloader.xpc Updater.app Autoupdate; do
+        codesign "${CODESIGN_NESTED[@]}" "${SIGN_ARGS[@]}" "$SPARKLE_VER/$helper"
+    done
     codesign "${CODESIGN_NESTED[@]}" "${SIGN_ARGS[@]}" "$APP/Contents/Frameworks/Sparkle.framework"
 fi
 
 # Sign SPM resource bundles inside-out (no --deep). KeyboardShortcuts.Recorder
 # loads Bundle.module; an unsigned .bundle makes Bundle(url:) return nil under
 # the MAS hardened runtime and the accessor fatalErrors.
-shopt -s nullglob
 for bundle in "$APP/Contents/Resources/"*.bundle; do
-    if [ "$MAS" = "1" ] || [ "$NOTARIZE" = "1" ]; then
-        codesign --force --options runtime --timestamp "${SIGN_ARGS[@]}" "$bundle"
-    else
-        codesign --force "${SIGN_ARGS[@]}" "$bundle"
-    fi
+    codesign "${CODESIGN_BUNDLE[@]}" "${SIGN_ARGS[@]}" "$bundle"
 done
-shopt -u nullglob
 
 codesign "${CODESIGN_APP[@]}" "${SIGN_ARGS[@]}" "$APP"
 echo "Signed with: $SIGN_LABEL"
@@ -202,16 +226,12 @@ echo "Signed with: $SIGN_LABEL"
 echo "Packaged: $APP ($CONFIG)"
 
 if [ "$MAS" = "1" ]; then
-    INSTALLER_ID="${MARKY_INSTALLER_ID:-}"
-    if [ -z "$INSTALLER_ID" ]; then
-        INSTALLER_ID="$(security find-identity -v | awk -F'"' '/3rd Party Mac Developer Installer/{print $2; exit}')"
-    fi
+    INSTALLER_ID="${MARKY_INSTALLER_ID:-$(find_identity '3rd Party Mac Developer Installer')}"
     if [ -z "$INSTALLER_ID" ]; then
         echo "error: Mac App Store packaging requires a '3rd Party Mac Developer Installer' identity." >&2
         exit 1
     fi
 
-    DIST="$ROOT/dist"
     PKG="$DIST/Marky.pkg"
     mkdir -p "$DIST"
     rm -f "$PKG"
@@ -220,13 +240,7 @@ if [ "$MAS" = "1" ]; then
     echo "Signed with: $INSTALLER_ID"
 
     if [ "$UPLOAD" = "1" ]; then
-        if [ -f "$ROOT/.env" ]; then
-            set -a
-            # shellcheck disable=SC1091
-            . "$ROOT/.env"
-            set +a
-        fi
-        APP_PASSWORD="${APPLE_APP_SPECIFIC_PASSWORD:-${APPLE_APP_PASSWORD:-}}"
+        load_env
         TRANSPORTER="/Applications/Transporter.app/Contents/itms/bin/iTMSTransporter"
         if [ ! -x "$TRANSPORTER" ]; then
             echo "error: Transporter.app is required to upload to App Store Connect." >&2
@@ -249,17 +263,8 @@ if [ "$NOTARIZE" = "1" ]; then
         exit 1
     fi
 
-    # Notary credentials can live in a gitignored .env (APPLE_ID, APPLE_TEAM_ID,
-    # APPLE_APP_SPECIFIC_PASSWORD) — loaded only for the notarize step.
-    if [ -f "$ROOT/.env" ]; then
-        set -a
-        # shellcheck disable=SC1091
-        . "$ROOT/.env"
-        set +a
-    fi
-
+    load_env
     APP_PASSWORD="${APPLE_APP_SPECIFIC_PASSWORD:-${APPLE_APP_PASSWORD:-}}"
-    NOTARY_ARGS=()
     if [ -n "${MARKY_NOTARY_PROFILE:-}" ]; then
         NOTARY_ARGS=(--keychain-profile "$MARKY_NOTARY_PROFILE")
     elif [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ] && [ -n "$APP_PASSWORD" ]; then
@@ -268,8 +273,7 @@ if [ "$NOTARIZE" = "1" ]; then
         NOTARY_ARGS=(--keychain-profile marky-notary)
     fi
 
-    VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist" 2>/dev/null || echo dev)"
-    DIST="$ROOT/dist"
+    VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIST" 2>/dev/null || echo dev)"
     ZIP="$DIST/Marky-$VERSION.zip"
     mkdir -p "$DIST"
 
