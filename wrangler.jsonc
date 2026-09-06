@@ -1,0 +1,8 @@
+// Deploys website/ as static assets to the Worker that serves https://marky.click
+// (created via the Cloudflare dashboard drop; the custom domain is bound to this name).
+// Usage: npx wrangler deploy
+{
+  "name": "drop-42a4b86e-b97",
+  "compatibility_date": "2026-09-01",
+  "assets": { "directory": "./website" }
+}
