@@ -539,7 +539,7 @@
       <a href="#features">Features</a>
       <a href="#download">Download</a>
       <a href="#faq">FAQ</a>
-      <a class="btn" href="https://download.marky.click/Marky.dmg">Download</a>
+      <a class="btn" href="https://apps.apple.com/app/marky-clipboard/id6805945461?mt=12">Mac App Store</a>
     </div>
   </nav>
 
@@ -557,7 +557,7 @@
         and more.
       </p>
       <div class="cta-row">
-        <a class="btn btn-lg" href="https://download.marky.click/Marky.dmg">Download Marky</a>
+        <a class="btn btn-lg" href="https://apps.apple.com/app/marky-clipboard/id6805945461?mt=12">Get on the Mac App Store</a>
       </div>
       <p class="fine">macOS 15+ · everything stays on your Mac</p>
     </div>
@@ -889,11 +889,11 @@ Fixed login flow…</div>
           <li>All hotkeys, settings, and exclusions</li>
           <li>Use on all Macs you own</li>
         </ul>
-        <a class="btn btn-lg" href="https://download.marky.click/Marky.dmg">Download Marky</a>
+        <a class="btn btn-lg" href="https://apps.apple.com/app/marky-clipboard/id6805945461?mt=12">Get on the Mac App Store</a>
       </div>
       <div class="download-aside">
-        <p><strong>Direct download.</strong> Grab the DMG and drag Marky to
-        Applications. No account needed.</p>
+        <p><strong>Mac App Store.</strong> Free to install. Updates come
+        through Apple.</p>
         <p><strong>macOS 15+.</strong> A tiny menu-bar app. Everything —
         history, conversion, OCR — stays on your Mac.</p>
       </div>
@@ -1013,8 +1013,25 @@ Fixed login flow…</div>
     });
   });
 
+  // On mobile the demos autoplay, so hide the native controls; tap toggles play/pause instead.
+  const demoIsMobile = window.matchMedia("(max-width: 800px)");
+  function syncDemoControls() {
+    demoPanels.forEach((panel) => {
+      const video = panel.querySelector("video");
+      video.controls = !demoIsMobile.matches;
+    });
+  }
+  syncDemoControls();
+  demoIsMobile.addEventListener("change", syncDemoControls);
+
   demoPanels.forEach((panel) => {
-    panel.querySelector("video").addEventListener("ended", () => {
+    const video = panel.querySelector("video");
+    video.addEventListener("click", () => {
+      if (video.controls) return;
+      if (video.paused) video.play().catch(() => {});
+      else video.pause();
+    });
+    video.addEventListener("ended", () => {
       const currentTab = demoTabs.find(
         (tab) => tab.getAttribute("aria-controls") === panel.id
       );
