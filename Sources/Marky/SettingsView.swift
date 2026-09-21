@@ -246,10 +246,13 @@ private struct ShortcutsPane: View {
     var body: some View {
         Form {
             KeyboardShortcuts.Recorder("Open Clipboard History:", name: .openHistory)
+            KeyboardShortcuts.Recorder("Smart Fill:", name: .smartFill)
             KeyboardShortcuts.Recorder("Convert to Rich Text:", name: .convertToRichText)
             KeyboardShortcuts.Recorder("Restore Original Markdown:", name: .restoreOriginal)
             KeyboardShortcuts.Recorder("Copy as Plain Text:", name: .copyPlainText)
             Text("Opens a floating history window. Use ↑↓ to navigate, Enter or click to paste the clip into the app you were using, Esc to close.")
+                .settingsDescription()
+            Text("Smart Fill defaults to ⌥⌘F. Its first use downloads the model from Marky; detection and filling then run entirely on-device. Requires Accessibility.")
                 .settingsDescription()
             #if APPSTORE
             Text("Other shortcuts rewrite the clipboard (and show up in History); paste with ⌘V. Paste on click may ask to control System Events.")

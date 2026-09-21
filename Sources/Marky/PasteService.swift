@@ -11,28 +11,33 @@ import Foundation
 enum PasteService {
     static func sendPasteCommand() {
         #if APPSTORE
-        sendPasteViaSystemEvents()
+        sendKeyViaSystemEvents("v")
         #else
-        sendPasteViaCGEvent()
+        sendCommandKeyViaCGEvent(CGKeyCode(kVK_ANSI_V))
+        #endif
+    }
+
+    static func sendSelectAllCommand() {
+        #if APPSTORE
+        sendKeyViaSystemEvents("a")
+        #else
+        sendCommandKeyViaCGEvent(CGKeyCode(kVK_ANSI_A))
         #endif
     }
 
     #if APPSTORE
-    private static func sendPasteViaSystemEvents() {
-        let source = "tell application \"System Events\" to keystroke \"v\" using command down"
+    private static func sendKeyViaSystemEvents(_ key: String) {
+        let source = "tell application \"System Events\" to keystroke \"\(key)\" using command down"
         var error: NSDictionary?
         NSAppleScript(source: source)?.executeAndReturnError(&error)
     }
     #else
-    private static func sendPasteViaCGEvent() {
+    private static func sendCommandKeyViaCGEvent(_ key: CGKeyCode) {
         let source = CGEventSource(stateID: .combinedSessionState)
-        let vKey = CGKeyCode(kVK_ANSI_V)
-
-        let keyDown = CGEvent(keyboardEventSource: source, virtualKey: vKey, keyDown: true)
+        let keyDown = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: true)
         keyDown?.flags = .maskCommand
-        let keyUp = CGEvent(keyboardEventSource: source, virtualKey: vKey, keyDown: false)
+        let keyUp = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: false)
         keyUp?.flags = .maskCommand
-
         keyDown?.post(tap: .cghidEventTap)
         keyUp?.post(tap: .cghidEventTap)
     }

@@ -14,6 +14,7 @@ struct MarkyApp: App {
     @StateObject private var hotkeys: HotkeyManager
     @StateObject private var permissions: AccessibilityPermissionManager
     @StateObject private var historyPanel: HistoryPanelController
+    @StateObject private var smartFill: SmartFillController
     @StateObject private var updates: UpdateController
     @State private var isMenuPresented = false
     @State private var statusItem: NSStatusItem?
@@ -38,7 +39,12 @@ struct MarkyApp: App {
             monitor: monitor,
             actions: actions,
             permissions: permissions)
+        let smartFill = SmartFillController(
+            pasteboard: pasteboardService,
+            policy: policy,
+            permissions: permissions)
         hotkeys.onOpenHistory = { [weak historyPanel] in historyPanel?.toggle() }
+        hotkeys.onSmartFill = { [weak smartFill] in smartFill?.start() }
         _settings = StateObject(wrappedValue: settings)
         _history = StateObject(wrappedValue: history)
         _monitor = StateObject(wrappedValue: monitor)
@@ -46,6 +52,7 @@ struct MarkyApp: App {
         _hotkeys = StateObject(wrappedValue: hotkeys)
         _permissions = StateObject(wrappedValue: permissions)
         _historyPanel = StateObject(wrappedValue: historyPanel)
+        _smartFill = StateObject(wrappedValue: smartFill)
         _updates = StateObject(wrappedValue: UpdateController())
     }
 

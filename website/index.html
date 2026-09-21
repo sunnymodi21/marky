@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Clipboard history for Mac. Search every clip with ⌥⌘V, OCR text from screenshots on-device, and automatically format Markdown as rich text for Docs, Slack, and Mail.">
-  <title>Marky — Clipboard history for Mac, plus Markdown that pastes as rich text</title>
+  <meta name="description" content="Clipboard history and Smart Fill for Mac. Search every clip, fill forms from copied text on-device, OCR screenshots, and paste Markdown as rich text.">
+  <title>Marky — Clipboard history, Smart Fill, and rich-text Markdown for Mac</title>
   <link rel="icon" href="/favicon.ico" sizes="48x48">
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
   <link rel="icon" type="image/png" sizes="192x192" href="/favicon-192.png">
@@ -13,8 +13,8 @@
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Marky">
   <meta property="og:url" content="https://marky.click/">
-  <meta property="og:title" content="Marky — Clipboard history for Mac, plus Markdown that pastes as rich text">
-  <meta property="og:description" content="Clipboard history for Mac. Search every clip with ⌥⌘V, OCR text from screenshots on-device, and automatically format Markdown as rich text for Docs, Slack, and Mail.">
+  <meta property="og:title" content="Marky — Clipboard history, Smart Fill, and rich-text Markdown for Mac">
+  <meta property="og:description" content="Clipboard history and Smart Fill for Mac. Search every clip, fill forms from copied text on-device, OCR screenshots, and paste Markdown as rich text.">
   <meta property="og:image" content="https://marky.click/og-image.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
@@ -553,13 +553,14 @@
       <p class="sub">
         A clipboard manager that remembers everything you copy — text and
         screenshots — with on-device OCR. Copied Markdown becomes formatted
-        rich text automatically, ready for Google&nbsp;Docs, Slack, Mail,
-        and more.
+        rich text automatically, and Smart Fill turns copied contact details
+        into completed forms — all processed on your Mac.
       </p>
       <div class="cta-row">
+        <a class="btn btn-lg" href="https://download.marky.click/Marky.dmg">Download Marky 1.1</a>
         <a class="btn btn-lg" href="https://apps.apple.com/app/marky-clipboard/id6805945461?mt=12">Get on the Mac App Store</a>
       </div>
-      <p class="fine">macOS 15+ · everything stays on your Mac</p>
+      <p class="fine">macOS 15+ · Smart Fill is available in the direct download</p>
     </div>
 
     <div class="demo" aria-label="Before and after: raw Markdown becomes rich text">
@@ -821,6 +822,13 @@ Fixed login flow…</div>
     </p>
     <div class="features">
       <div class="feature">
+        <span class="glyph">form ✦</span>
+        <h3>Smart Fill, locally</h3>
+        <p>Copy contact details, focus a form, and press ⌥⌘F. Marky
+        matches the text to empty fields with an on-device model.
+        The model downloads only on first use. Direct download only.</p>
+      </div>
+      <div class="feature">
         <span class="glyph">⌥⌘V</span>
         <h3>Clipboard history</h3>
         <p>A floating, keyboard-first history window — text and images.
@@ -867,6 +875,7 @@ Fixed login flow…</div>
         </thead>
         <tbody>
           <tr><td>Open history</td><td class="combo"><kbd>⌥⌘V</kbd></td><td class="what">Floating clipboard history — search, pick a clip, it pastes itself</td></tr>
+          <tr><td>Smart Fill</td><td class="combo"><kbd>⌥⌘F</kbd></td><td class="what">Fill empty form fields from copied text; downloads the local model on first use</td></tr>
           <tr><td>Convert to rich text</td><td class="combo"><kbd>⌥⌘M</kbd></td><td class="what">Force-convert whatever is on the clipboard right now</td></tr>
           <tr><td>Restore original</td><td class="combo"><kbd>⌥⇧⌘M</kbd></td><td class="what">Put the untouched Markdown back</td></tr>
           <tr><td>Copy as plain text</td><td class="combo"><kbd>⌥⌘P</kbd></td><td class="what">Strip all formatting from any clipboard content</td></tr>
@@ -880,8 +889,9 @@ Fixed login flow…</div>
     <h2>Get Marky</h2>
     <div class="download-grid">
       <div class="download-card">
-        <p class="download-note">A macOS menu-bar app. No account required. Clipboard history, Markdown conversion, OCR, and hotkeys are all included.</p>
+        <p class="download-note">Download Marky 1.1 directly for every feature, including on-device Smart Fill. The signed download is about 185 MB because its Python inference runtime is included. No account required.</p>
         <ul class="includes">
+          <li>Smart Fill for forms from copied text</li>
           <li>Keyboard-first clipboard history — text and screenshots</li>
           <li>On-device OCR for copied images and screenshots</li>
           <li>Automatic Markdown → rich text conversion</li>
@@ -889,12 +899,18 @@ Fixed login flow…</div>
           <li>All hotkeys, settings, and exclusions</li>
           <li>Use on all Macs you own</li>
         </ul>
-        <a class="btn btn-lg" href="https://apps.apple.com/app/marky-clipboard/id6805945461?mt=12">Get on the Mac App Store</a>
+        <div class="cta-row">
+          <a class="btn btn-lg" href="https://download.marky.click/Marky.dmg">Download Marky 1.1</a>
+          <a class="btn btn-lg" href="https://apps.apple.com/app/marky-clipboard/id6805945461?mt=12">Mac App Store</a>
+        </div>
       </div>
       <div class="download-aside">
-        <p><strong>Mac App Store.</strong> Free to install. Updates come
-        through Apple.</p>
-        <p><strong>macOS 15+.</strong> A tiny menu-bar app. Everything —
+        <p><strong>Direct download.</strong> Includes the complete Smart Fill
+        runtime, so Python is not required. The first use downloads its roughly
+        800 MB local model, then inference stays on your Mac.</p>
+        <p><strong>Mac App Store.</strong> Includes the clipboard, Markdown, and
+        OCR features; updates come through Apple.</p>
+        <p><strong>macOS 15+.</strong> A menu-bar app. Everything —
         history, conversion, OCR — stays on your Mac.</p>
       </div>
     </div>
@@ -926,10 +942,20 @@ Fixed login flow…</div>
         can paste or edit it.</p>
       </details>
       <details>
+        <summary>How does Smart Fill work?</summary>
+        <p>In the direct-download build, copy text containing details such as a
+        name, email, or phone number, focus a form, and press ⌥⌘F. Marky
+        detects empty fields through macOS
+        Accessibility and matches values with a local GLiNER model. Smart Fill
+        downloads the local model on first use.</p>
+      </details>
+      <details>
         <summary>Does my clipboard ever leave my Mac?</summary>
-        <p>No. Detection, conversion, history, and OCR all run on-device. Marky
-        makes no network requests, and your history is a local file you can
-        delete at any time.</p>
+        <p>No clipboard contents are uploaded. Detection, conversion, history,
+        OCR, and Smart Fill inference run on-device. The direct build makes
+        network requests only for app updates and the initial Smart Fill model
+        download. Your history remains a local file you can delete
+        at any time.</p>
       </details>
       <details>
         <summary>Will it mangle things that aren't Markdown?</summary>
@@ -947,9 +973,10 @@ Fixed login flow…</div>
       </details>
       <details>
         <summary>Why does Marky ask for the Accessibility permission?</summary>
-        <p>Only the history window's paste-on-pick uses it, to press ⌘V into
-        the app you came from. Decline it and everything else still works —
-        picking a clip simply copies it for you to paste yourself.</p>
+        <p>Paste-on-pick uses it to press ⌘V into the app you came from. Smart
+        Fill also uses it to identify empty form fields and write matched
+        values. Decline it and conversion, history, OCR, and copy-only actions
+        still work.</p>
       </details>
       <details>
         <summary>What does it run on?</summary>

@@ -86,6 +86,18 @@ import Testing
         #expect(!monitor.convertClipboardIfNeeded(force: false))
     }
 
+    @Test func restoredSnapshotCarriesMarker() {
+        let (_, service, pasteboard, _) = self.makeMonitor()
+        self.setPlainText("original", on: pasteboard)
+        let snapshot = service.copyItems()
+
+        service.writePlainText("temporary")
+        service.restoreItems(snapshot)
+
+        #expect(pasteboard.string(forType: .string) == "original")
+        #expect(pasteboard.types?.contains(PasteboardService.markerType) == true)
+    }
+
     @Test func plainTextPrefersStringRepresentation() {
         let (monitor, service, pasteboard, _) = self.makeMonitor()
         self.setPlainText("# Title\n\n**bold**", on: pasteboard)

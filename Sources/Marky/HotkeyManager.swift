@@ -7,6 +7,9 @@ extension KeyboardShortcuts.Name {
     static let restoreOriginal = Self("pasteOriginal")
     static let copyPlainText = Self("copyPlainText")
     static let openHistory = Self("openHistory")
+    static let smartFill = Self(
+        "smartFill",
+        default: .init(.f, modifiers: [.command, .option]))
 }
 
 /// Registers the global hotkeys and dispatches them to `ClipboardActions`.
@@ -20,6 +23,10 @@ final class HotkeyManager: ObservableObject {
     /// published counter from a SwiftUI scene (scene `.onChange` may not fire when the
     /// menu-bar scene isn't rendering).
     var onOpenHistory: (() -> Void)?
+
+    /// Invoked when the Smart Fill hotkey fires. Set by the app to start a fill
+    /// of the frontmost form from the current clipboard.
+    var onSmartFill: (() -> Void)?
 
     init(actions: ClipboardActions) {
         self.actions = actions
@@ -56,6 +63,9 @@ final class HotkeyManager: ObservableObject {
         }
         KeyboardShortcuts.onKeyUp(for: .openHistory) { [weak self] in
             self?.onOpenHistory?()
+        }
+        KeyboardShortcuts.onKeyUp(for: .smartFill) { [weak self] in
+            self?.onSmartFill?()
         }
     }
 }

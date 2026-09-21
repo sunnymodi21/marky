@@ -37,7 +37,8 @@ let package = Package(
             ]),
         .executableTarget(
             name: "Marky",
-            dependencies: markyDependencies),
+            dependencies: markyDependencies,
+            exclude: ["SmartFill/gliner_worker.py"]),
         .executableTarget(
             name: "MarkyCLI",
             dependencies: [

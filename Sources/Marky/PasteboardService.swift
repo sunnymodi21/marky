@@ -111,6 +111,30 @@ final class PasteboardService {
         self.write(item)
     }
 
+    /// Deep-copies the current pasteboard items so a later `restoreItems`
+    /// can put them back. Used by Smart Fill's paste fallback.
+    func copyItems() -> [NSPasteboardItem] {
+        guard let items = self.pasteboard.pasteboardItems else { return [] }
+        return items.map { item in
+            let copy = NSPasteboardItem()
+            for type in item.types {
+                if let data = item.data(forType: type) {
+                    copy.setData(data, forType: type)
+                }
+            }
+            return copy
+        }
+    }
+
+    /// Restores a snapshot taken with `copyItems()`, marking the write as ours.
+    func restoreItems(_ items: [NSPasteboardItem]) {
+        let markerItem = items.first ?? NSPasteboardItem()
+        markerItem.setData(Data(), forType: Self.markerType)
+        self.pasteboard.clearContents()
+        self.pasteboard.writeObjects(items.isEmpty ? [markerItem] : items)
+        self.markOwnWrite()
+    }
+
     /// Writes PNG and TIFF image representations with Marky's marker.
     func writeImagePNG(_ pngData: Data) {
         let item = NSPasteboardItem()

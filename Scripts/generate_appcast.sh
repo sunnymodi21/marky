@@ -35,6 +35,9 @@ if [ ! -x "$SPARKLE_BIN/generate_appcast" ]; then
 fi
 
 mkdir -p "$UPDATES"
+# The unversioned latest-download alias must not be present while Sparkle scans
+# archives, otherwise it sees the same release twice.
+rm -f "$UPDATES/Marky.dmg"
 
 shopt -s nullglob
 archives=("$DIST"/Marky-*.dmg)
@@ -53,8 +56,12 @@ if [ ${#archives[@]} -eq 0 ]; then
     exit 1
 fi
 
+latest_dmg=""
 for archive in "${archives[@]}"; do
     cp "$archive" "$UPDATES/"
+    if [[ "$archive" == *.dmg ]] && { [ -z "$latest_dmg" ] || [ "$archive" -nt "$latest_dmg" ]; }; then
+        latest_dmg="$archive"
+    fi
 done
 
 GEN_ARGS=(
@@ -98,6 +105,10 @@ if n:
 "
     done
     shopt -u nullglob
+fi
+
+if [ -n "$latest_dmg" ]; then
+    cp "$latest_dmg" "$UPDATES/Marky.dmg"
 fi
 
 echo "Appcast: $UPDATES/appcast.xml"

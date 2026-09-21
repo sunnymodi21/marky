@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Privacy policy for Marky, the macOS clipboard app. Clipboard history, Markdown conversion, and OCR stay on your Mac.">
+  <meta name="description" content="Privacy policy for Marky, the macOS clipboard app. Clipboard history, Markdown conversion, OCR, and Smart Fill processing stay on your Mac.">
   <title>Privacy — Marky</title>
   <style>
     :root {
@@ -49,7 +49,7 @@
   <meta property="og:site_name" content="Marky">
   <meta property="og:url" content="https://marky.click/privacy.html">
   <meta property="og:title" content="Privacy — Marky">
-  <meta property="og:description" content="Privacy policy for Marky, the macOS clipboard app. Clipboard history, Markdown conversion, and OCR stay on your Mac.">
+  <meta property="og:description" content="Privacy policy for Marky, the macOS clipboard app. Clipboard history, Markdown conversion, OCR, and Smart Fill processing stay on your Mac.">
   <meta property="og:image" content="https://marky.click/og-image.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
@@ -63,12 +63,12 @@
   </nav>
 
   <h1>Privacy Policy</h1>
-  <p class="meta">Last updated August 27, 2026 · Contact <a href="mailto:sunnymodi21@proton.me">sunnymodi21@proton.me</a></p>
+  <p class="meta">Last updated September 20, 2026 · Contact <a href="mailto:sunnymodi21@proton.me">sunnymodi21@proton.me</a></p>
 
-  <p>Marky is a macOS menu-bar app by Sunny Modi. It converts copied Markdown into rich text, keeps a local clipboard history, and can read text from images with on-device OCR. This policy describes what Marky does — and does not — do with your data.</p>
+  <p>Marky is a macOS menu-bar app by Sunny Modi. It converts copied Markdown into rich text, keeps a local clipboard history, reads text from images with on-device OCR, and can fill forms from copied text using an on-device model. This policy describes what Marky does — and does not — do with your data.</p>
 
   <h2>Short version</h2>
-  <p>Your clipboard never leaves your Mac. Marky does not have accounts, analytics, ads, or tracking. History, conversion, and OCR all run on-device.</p>
+  <p>Your clipboard never leaves your Mac. Marky does not have accounts, analytics, ads, or tracking. History, conversion, OCR, and Smart Fill inference all run on-device.</p>
 
   <h2>What Marky stores on your Mac</h2>
   <ul>
@@ -89,16 +89,18 @@
   <ul>
     <li><strong>Markdown conversion</strong> runs locally (cmark-gfm → rich text / HTML on the pasteboard).</li>
     <li><strong>OCR</strong> uses Apple’s on-device Vision framework. Recognized text is copied back to your clipboard; nothing is sent to a server.</li>
+    <li><strong>Smart Fill</strong> uses a local GLiNER model to match copied text to empty form fields. Clipboard text and extracted values are not uploaded. The model downloads only when you first invoke Smart Fill with its default ⌥⌘F shortcut.</li>
     <li><strong>Password-manager secrets</strong> marked concealed or transient (the nspasteboard.org convention used by 1Password and others) are skipped: never converted, never stored in history.</li>
   </ul>
 
   <h2>Permissions</h2>
-  <p><strong>Accessibility</strong> is optional. It is used only so the history window can paste into the app you came from (synthetic ⌘V). If you decline, Marky still converts Markdown, records history, and copies clips — you paste them yourself.</p>
+  <p><strong>Accessibility</strong> is optional. It lets the history window paste into the app you came from and lets Smart Fill detect and fill empty form fields. If you decline, Marky still converts Markdown, records history, runs OCR, and copies clips — you paste them yourself.</p>
   <p>Marky does not request Screen Recording, Contacts, Location, Photos library, Camera, or Microphone access.</p>
 
   <h2>The website and direct downloads</h2>
   <p>marky.click and download.marky.click are hosted on Cloudflare. Visiting those pages or downloading the app may produce standard web server logs (for example IP address, user agent, and the URL requested) that Cloudflare retains according to its own policies. That logging is separate from the Marky app, which does not send clipboard data to those sites.</p>
-  <p>The direct-download build may check for updates from <code>download.marky.click</code> (Sparkle). The Mac App Store build does not; Apple delivers those updates.</p>
+  <p>The direct-download build may check for updates from <code>download.marky.click</code> (Sparkle). Its signed app bundle includes the Python inference runtime, so no system Python or runtime installation is required. When you first invoke Smart Fill, it downloads its model from <code>download.marky.click</code>. These requests do not include clipboard contents. After setup, Smart Fill inference runs locally.</p>
+  <p>The Mac App Store build does not include Smart Fill and receives updates through Apple.</p>
 
   <h2>Children</h2>
   <p>Marky is a general-purpose productivity tool and does not target children. It does not knowingly collect personal information from anyone, including children under 13.</p>

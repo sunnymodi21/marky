@@ -1,14 +1,6 @@
 import AppKit
 import SwiftUI
 
-/// A borderless/titled panel that can take key focus (for the search field) without
-/// activating Marky — so the user's current app stays active and its menu bar
-/// responsive while the overlay floats on top.
-private final class FloatingHistoryPanel: NSPanel {
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { false }
-}
-
 /// A floating, Spotlight-style window (separate from the menu-bar dropdown) that
 /// shows the clipboard history. Opened by the global hotkey. Picking a clip
 /// restores it to the clipboard and — when auto-paste is on and Accessibility is
@@ -125,26 +117,12 @@ final class HistoryPanelController: NSObject, ObservableObject, NSWindowDelegate
     // MARK: - Window
 
     private func makePanel() -> NSPanel {
-        let panel = FloatingHistoryPanel(
+        let panel = FloatingOverlayPanel(
             contentRect: NSRect(x: 0, y: 0, width: 340, height: 480),
             styleMask: [.titled, .fullSizeContentView, .nonactivatingPanel],
             backing: .buffered,
             defer: false)
-        panel.becomesKeyOnlyIfNeeded = false
-        panel.titleVisibility = .hidden
-        panel.titlebarAppearsTransparent = true
-        panel.standardWindowButton(.closeButton)?.isHidden = true
-        panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
-        panel.standardWindowButton(.zoomButton)?.isHidden = true
-        panel.isMovableByWindowBackground = true
-        panel.level = .floating
-        panel.hidesOnDeactivate = false
-        panel.isReleasedWhenClosed = false
-        // NOTE: .canJoinAllSpaces and .moveToActiveSpace are mutually exclusive —
-        // setting both raises an NSException. Pick one.
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.animationBehavior = .utilityWindow
-        panel.delegate = self
+        OverlayPanelLayout.configure(panel, delegate: self)
 
         let hosting = NSHostingView(rootView: HistoryPanelRoot(controller: self))
         hosting.sizingOptions = [.intrinsicContentSize]
@@ -158,11 +136,7 @@ final class HistoryPanelController: NSObject, ObservableObject, NSWindowDelegate
     /// Sizes the panel to the hosted content, clamped to sane bounds (the view's
     /// fittingSize can read 0 before first layout).
     private func fitContent(_ panel: NSPanel) {
-        guard let hosting = panel.contentView else { return }
-        let fitting = hosting.fittingSize
-        let width: CGFloat = 340
-        let height = (fitting.height > 120 ? fitting.height : 480)
-        panel.setContentSize(NSSize(width: width, height: min(height, 760)))
+        OverlayPanelLayout.fit(panel, width: 340, fallbackHeight: 480)
     }
 
     /// Centers horizontally and sits in the upper third of the screen with the cursor,
@@ -170,21 +144,7 @@ final class HistoryPanelController: NSObject, ObservableObject, NSWindowDelegate
     private func positionOnActiveScreen(_ panel: NSPanel) {
         // Re-fit in case the content height changed (history grew/shrank).
         self.fitContent(panel)
-        let screen = self.screenWithCursor() ?? NSScreen.main
-        guard let frame = screen?.visibleFrame else { return }
-        let size = panel.frame.size
-        // NSWindow origin is the bottom-left; place the window's TOP ~12% below the
-        // screen top, then clamp so it never spills off either edge.
-        let topInset = frame.height * 0.12
-        let x = frame.midX - size.width / 2
-        var y = frame.maxY - topInset - size.height
-        y = max(frame.minY + 8, min(y, frame.maxY - size.height - 8))
-        panel.setFrameOrigin(NSPoint(x: x, y: y))
-    }
-
-    private func screenWithCursor() -> NSScreen? {
-        let mouse = NSEvent.mouseLocation
-        return NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) }
+        OverlayPanelLayout.position(panel)
     }
 
     // MARK: - NSWindowDelegate
@@ -203,18 +163,18 @@ private struct HistoryPanelRoot: View {
     @ObservedObject var controller: HistoryPanelController
 
     var body: some View {
-        MenuContentView(
-            settings: self.controller.settings,
-            monitor: self.controller.monitor,
-            history: self.controller.history,
-            actions: self.controller.actions,
-            isPresented: Binding(
-                get: { self.controller.isPresented },
-                set: { self.controller.isPresented = $0 }),
-            surface: .overlay,
-            onPick: { self.controller.pick() },
-            onPasteCurrent: { self.controller.pasteCurrent() })
-            .background(.regularMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        OverlayPanelSurface {
+            MenuContentView(
+                settings: self.controller.settings,
+                monitor: self.controller.monitor,
+                history: self.controller.history,
+                actions: self.controller.actions,
+                isPresented: Binding(
+                    get: { self.controller.isPresented },
+                    set: { self.controller.isPresented = $0 }),
+                surface: .overlay,
+                onPick: { self.controller.pick() },
+                onPasteCurrent: { self.controller.pasteCurrent() })
+        }
     }
 }

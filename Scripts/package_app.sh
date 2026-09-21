@@ -92,6 +92,13 @@ printf 'APPL????' > "$APP/Contents/PkgInfo"
 if [ -f "$ROOT/PrivacyInfo.xcprivacy" ]; then
     cp "$ROOT/PrivacyInfo.xcprivacy" "$APP/Contents/Resources/PrivacyInfo.xcprivacy"
 fi
+if [ -f "$ROOT/Sources/Marky/SmartFill/gliner_worker.py" ]; then
+    cp "$ROOT/Sources/Marky/SmartFill/gliner_worker.py" "$APP/Contents/Resources/gliner_worker.py"
+fi
+if [ "$MAS" != "1" ] && [ "$CONFIG" = "release" ]; then
+    "$ROOT/Scripts/prepare_python_runtime.sh"
+    ditto "$ROOT/.build/marky-python-runtime" "$APP/Contents/Resources/python"
+fi
 
 ICON_SOURCE="$ROOT/Assets/AppIconSource.png"
 if [ -f "$ICON_SOURCE" ]; then
@@ -126,13 +133,16 @@ for bundle in "$APP/Contents/Resources/"*.bundle; do
 done
 
 if [ "$MAS" = "1" ]; then
-    /usr/libexec/PlistBuddy -c 'Set :CFBundleShortVersionString 1.0' "$PLIST"
-    /usr/libexec/PlistBuddy -c 'Set :CFBundleVersion 6' "$PLIST"
+    /usr/libexec/PlistBuddy -c 'Set :CFBundleShortVersionString 1.1' "$PLIST"
+    /usr/libexec/PlistBuddy -c 'Set :CFBundleVersion 7' "$PLIST"
     for key in SUFeedURL SUPublicEDKey SUEnableAutomaticChecks ITSAppUsesNonExemptEncryption; do
         /usr/libexec/PlistBuddy -c "Delete :$key" "$PLIST" 2>/dev/null || true
     done
     /usr/libexec/PlistBuddy -c 'Add :ITSAppUsesNonExemptEncryption bool false' "$PLIST"
     cp "$ROOT/Signing/Marky_Mac_App_Store.provisionprofile" "$APP/Contents/embedded.provisionprofile"
+    # SwiftPM dependency resources may be read-only; make the staged copy writable
+    # so xattr can remove provenance metadata before App Store signing.
+    chmod -R u+w "$APP"
     xattr -cr "$APP"
 else
     # Embed Sparkle.framework (XPC helpers + Autoupdate live inside it). SPM links
@@ -221,6 +231,16 @@ fi
 for bundle in "$APP/Contents/Resources/"*.bundle; do
     codesign "${CODESIGN_BUNDLE[@]}" "${SIGN_ARGS[@]}" "$bundle"
 done
+
+# The bundled inference runtime contains Python, extension modules, and PyTorch
+# libraries. Sign every Mach-O file with Marky's identity before the outer app.
+if [ -d "$APP/Contents/Resources/python" ]; then
+    while IFS= read -r binary; do
+        codesign "${CODESIGN_NESTED[@]}" "${SIGN_ARGS[@]}" "$binary"
+    done < <(find "$APP/Contents/Resources/python" -type f -print0 \
+        | xargs -0 file \
+        | awk -F: '/Mach-O/ && $1 !~ / \(for architecture/ {print $1}')
+fi
 
 codesign "${CODESIGN_APP[@]}" "${SIGN_ARGS[@]}" "$APP"
 echo "Signed with: $SIGN_LABEL"

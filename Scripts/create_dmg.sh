@@ -38,7 +38,8 @@ if [[ -z "$MARKY_SIGN_ID" ]]; then
 fi
 
 VERSION="$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$ROOT/Info.plist")"
-DMG="$DIST/Marky-${VERSION}.dmg"
+BUILD="$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$ROOT/Info.plist")"
+DMG="$DIST/Marky-${VERSION}-${BUILD}.dmg"
 
 echo "Packaging with: $MARKY_SIGN_ID"
 MARKY_SIGN_ID="$MARKY_SIGN_ID" MARKY_HARDENED_RUNTIME=1 "$ROOT/Scripts/package_app.sh" release
@@ -54,7 +55,8 @@ hdiutil create \
   -volname "Marky" \
   -srcfolder "$STAGING" \
   -ov \
-  -format UDZO \
+  -format UDBZ \
+  -imagekey bzip2-level=9 \
   "$DMG" >/dev/null
 
 echo "Notarizing $DMG (this may take a few minutes)..."
