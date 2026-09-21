@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://marky.click">Website</a> ·
-  <a href="https://download.marky.click/Marky.dmg">Download</a> ·
+  <a href="https://download.marky.click/Marky.dmg?v=10">Download</a> ·
   <a href="https://github.com/sunnymodi21/marky">GitHub</a> ·
   <a href="https://marky.click/privacy">Privacy</a>
 </p>
