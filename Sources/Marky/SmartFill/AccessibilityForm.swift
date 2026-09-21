@@ -108,17 +108,25 @@ struct AccessibilityFormScanner {
             ?? AX.elements(from: axApp, AX.windows).first
         guard let window else { return [] }
 
-        let root = Self.firstRole("AXWebArea", in: window) ?? window
+        let webRoot = Self.firstRole("AXWebArea", in: window)
+        let root = webRoot ?? window
         var collected: [FormField] = []
         var nextID = 1
         var seen = Set<AXUIElement>()
-        Self.walk(root, depth: 0, collected: &collected, nextID: &nextID, seen: &seen)
+        Self.walk(
+            root,
+            depth: 0,
+            includesSemanticGroups: webRoot != nil,
+            collected: &collected,
+            nextID: &nextID,
+            seen: &seen)
         return collected
     }
 
     private static func walk(
         _ node: AXUIElement,
         depth: Int,
+        includesSemanticGroups: Bool,
         collected: inout [FormField],
         nextID: inout Int,
         seen: inout Set<AXUIElement>)
@@ -133,12 +141,21 @@ struct AccessibilityFormScanner {
             let id = "ax_\(nextID)"
             collected.append(FormField(
                 element: node,
-                snapshot: Self.snapshot(node, id: id)))
+                snapshot: Self.snapshot(
+                    node,
+                    id: id,
+                    includesSemanticGroups: includesSemanticGroups)))
             nextID += 1
         }
 
         for child in AX.elements(from: node, AX.children) {
-            Self.walk(child, depth: depth + 1, collected: &collected, nextID: &nextID, seen: &seen)
+            Self.walk(
+                child,
+                depth: depth + 1,
+                includesSemanticGroups: includesSemanticGroups,
+                collected: &collected,
+                nextID: &nextID,
+                seen: &seen)
             if collected.count >= Self.maxFields { return }
         }
     }
@@ -149,22 +166,8 @@ struct AccessibilityFormScanner {
         }
         let subrole = AX.string(from: element, AX.subrole)
         if subrole == "AXSearchField" || subrole == "AXURLField" { return false }
-        if Self.isBrowserChrome(element) { return false }
         if AX.bool(from: element, AX.enabled) == false { return false }
         return AX.string(from: element, AX.value) == nil
-    }
-
-    private static func isBrowserChrome(_ element: AXUIElement) -> Bool {
-        let haystack = [
-            AX.string(from: element, AX.title),
-            AX.string(from: element, AX.description),
-            AX.string(from: element, AX.placeholder),
-        ]
-        .compactMap { $0?.lowercased() }
-        .joined(separator: " ")
-        return haystack.contains("address and search bar")
-            || haystack.contains("search or enter")
-            || haystack.contains("omnibox")
     }
 
     private static func firstRole(_ role: String, in root: AXUIElement) -> AXUIElement? {
@@ -180,7 +183,11 @@ struct AccessibilityFormScanner {
         return nil
     }
 
-    private static func snapshot(_ element: AXUIElement, id: String) -> FormFieldSnapshot {
+    private static func snapshot(
+        _ element: AXUIElement,
+        id: String,
+        includesSemanticGroups: Bool) -> FormFieldSnapshot
+    {
         let parent = AX.element(from: element, AX.parent)
         let siblings = parent.map { AX.elements(from: $0, AX.children) } ?? []
         var nearby: [String] = []
@@ -188,9 +195,6 @@ struct AccessibilityFormScanner {
         func add(_ value: String?) {
             guard let value, !value.isEmpty, value.count <= 80, seen.insert(value).inserted else { return }
             nearby.append(value)
-        }
-        if let titleElement = AX.element(from: element, AX.titleUIElement) {
-            add(AX.string(from: titleElement, AX.value) ?? AX.string(from: titleElement, AX.title))
         }
         if let parent {
             add(AX.string(from: parent, AX.title))
@@ -201,12 +205,99 @@ struct AccessibilityFormScanner {
         return FormFieldSnapshot(
             id: id,
             role: AX.string(from: element, AX.role),
+            accessibleLabel: Self.accessibleName(of: element),
+            semanticGroup: includesSemanticGroups ? Self.semanticGroup(for: element) : nil,
             title: AX.string(from: element, AX.title),
             description: AX.string(from: element, AX.description),
             help: AX.string(from: element, AX.help),
             placeholder: AX.string(from: element, AX.placeholder),
             nearbyText: Array(nearby.prefix(6)),
             identifier: AX.string(from: element, AX.identifier))
+    }
+
+    private static func semanticGroup(for element: AXUIElement) -> String? {
+        var ancestor = AX.element(from: element, AX.parent)
+        var depth = 0
+        while let current = ancestor, depth < 8 {
+            let role = AX.string(from: current, AX.role)
+            if role == "AXWebArea" { return nil }
+            if role == "AXGroup",
+               let name = Self.accessibleName(of: current)
+            {
+                return name
+            }
+            if role == "AXGroup",
+               let name = Self.implicitGroupName(of: current)
+            {
+                return name
+            }
+            ancestor = AX.element(from: current, AX.parent)
+            depth += 1
+        }
+        return nil
+    }
+
+    /// An unnamed multi-field AXGroup may expose its legend as leading text.
+    private static func implicitGroupName(of group: AXUIElement) -> String? {
+        let children = AX.elements(from: group, AX.children)
+        var fieldLabels = Set<String>()
+        var editableCount = 0
+        var seen = Set<AXUIElement>()
+        var stack = children.map { ($0, 0) }
+
+        while let (node, depth) = stack.popLast() {
+            guard depth <= 6, seen.insert(node).inserted else { continue }
+            if let role = AX.string(from: node, AX.role), Self.editableRoles.contains(role) {
+                editableCount += 1
+                if let label = Self.accessibleName(of: node) {
+                    fieldLabels.insert(Self.comparisonKey(label))
+                }
+                continue
+            }
+            for child in AX.elements(from: node, AX.children) {
+                stack.append((child, depth + 1))
+            }
+        }
+        guard editableCount >= 2 else { return nil }
+
+        for child in children {
+            if Self.containsEditableField(child) { break }
+            guard AX.string(from: child, AX.role) == "AXStaticText",
+                  let text = AX.string(from: child, AX.value)
+                    ?? AX.string(from: child, AX.title),
+                  !fieldLabels.contains(Self.comparisonKey(text))
+            else { continue }
+            return text
+        }
+        return nil
+    }
+
+    private static func containsEditableField(_ root: AXUIElement) -> Bool {
+        var seen = Set<AXUIElement>()
+        var stack: [(AXUIElement, Int)] = [(root, 0)]
+        while let (node, depth) = stack.popLast() {
+            guard depth <= 6, seen.insert(node).inserted else { continue }
+            if let role = AX.string(from: node, AX.role), Self.editableRoles.contains(role) {
+                return true
+            }
+            for child in AX.elements(from: node, AX.children) {
+                stack.append((child, depth + 1))
+            }
+        }
+        return false
+    }
+
+    private static func comparisonKey(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    private static func accessibleName(of element: AXUIElement) -> String? {
+        if let titleElement = AX.element(from: element, AX.titleUIElement) {
+            return AX.string(from: titleElement, AX.value)
+                ?? AX.string(from: titleElement, AX.title)
+        }
+        return AX.string(from: element, AX.description)
+            ?? AX.string(from: element, AX.title)
     }
 }
 
@@ -217,7 +308,7 @@ struct AccessibilityFormWriter {
     func fill(_ assignments: [(element: AXUIElement, value: String)]) async {
         var failed: [(element: AXUIElement, value: String)] = []
         for assignment in assignments {
-            if Self.setValue(assignment.element, assignment.value) {
+            if await Self.setValue(assignment.element, assignment.value) {
                 continue
             }
             failed.append(assignment)
@@ -227,24 +318,34 @@ struct AccessibilityFormWriter {
         }
     }
 
-    private static func setValue(_ element: AXUIElement, _ value: String) -> Bool {
+    private static func setValue(_ element: AXUIElement, _ value: String) async -> Bool {
         guard AX.string(from: element, AX.value) == nil,
-              AX.isSettable(element, AX.value),
-              AX.setString(element, AX.value, value)
-        else {
-            return false
-        }
-        let actual = AX.string(from: element, AX.value) ?? ""
-        return actual == value || actual.contains(value)
+              AX.isSettable(element, AX.value)
+        else { return false }
+
+        // Some web controls route AXValue through the DOM-focused element.
+        // Focus is best-effort because direct AX writes do not require the
+        // system-wide focus identity exposed by keyboard fallback.
+        AX.setBool(element, AX.focused, true)
+        try? await Task.sleep(for: .milliseconds(40))
+        return AX.setString(element, AX.value, value)
     }
 
     private func paste(_ assignments: [(element: AXUIElement, value: String)]) async {
         let saved = self.pasteboard.copyItems()
         defer { self.pasteboard.restoreItems(saved) }
+        let systemWide = AXUIElementCreateSystemWide()
 
         for assignment in assignments {
-            AX.setBool(assignment.element, AX.focused, true)
+            guard AX.setBool(assignment.element, AX.focused, true) else { continue }
             try? await Task.sleep(for: .milliseconds(80))
+            // Never type unless the browser confirms that this exact control
+            // received focus; otherwise fallback input could corrupt a field
+            // that remained focused from the user's original click.
+            guard AX.bool(from: assignment.element, AX.focused) == true,
+                  let focused = AX.element(from: systemWide, "AXFocusedUIElement"),
+                  CFEqual(focused, assignment.element)
+            else { continue }
             PasteService.sendSelectAllCommand()
             try? await Task.sleep(for: .milliseconds(40))
             self.pasteboard.writePlainText(assignment.value)

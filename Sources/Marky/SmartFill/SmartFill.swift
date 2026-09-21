@@ -9,6 +9,8 @@ struct FormField {
 struct FormFieldSnapshot: Sendable, Equatable {
     var id: String
     var role: String?
+    var accessibleLabel: String?
+    var semanticGroup: String?
     var title: String?
     var description: String?
     var help: String?
@@ -60,14 +62,24 @@ enum FieldContextBuilder {
 
     static func description(for field: FormFieldSnapshot) -> String {
         var parts: [String] = []
-        if let role = field.role {
-            parts.append("Form control type: \(role).")
+        let accessibleLabel = Self.cleaned(field.accessibleLabel)
+        let semanticGroup = Self.cleaned(field.semanticGroup)
+        let title = Self.cleaned(field.title)
+        let fieldDescription = Self.cleaned(field.description)
+        let label = accessibleLabel ?? title ?? fieldDescription
+
+        if let semanticGroup, let label {
+            parts.append("\(semanticGroup) \(label).")
+        } else if let label {
+            parts.append("Value for the form field labeled \"\(label)\".")
+        } else {
+            parts.append("Value for this form field.")
         }
-        if let title = Self.cleaned(field.title) {
-            parts.append("Label: \"\(title)\".")
-        }
-        if let description = Self.cleaned(field.description), description != Self.cleaned(field.title) {
-            parts.append("Description: \"\(description)\".")
+        if accessibleLabel == nil,
+           let fieldDescription,
+           fieldDescription != label
+        {
+            parts.append("Description: \"\(fieldDescription)\".")
         }
         if let help = Self.cleaned(field.help) {
             parts.append("Help: \"\(help)\".")
@@ -75,11 +87,28 @@ enum FieldContextBuilder {
         if let placeholder = Self.cleaned(field.placeholder) {
             parts.append("Placeholder: \"\(placeholder)\".")
         }
-        let nearby = field.nearbyText.compactMap(Self.cleaned)
-        if !nearby.isEmpty {
-            parts.append("Nearby text: \(nearby.map { "\"\($0)\"" }.joined(separator: ", ")).")
+        if accessibleLabel == nil {
+            let nearby = field.nearbyText.compactMap(Self.cleaned)
+            if !nearby.isEmpty {
+                parts.append("Nearby text: \(nearby.map { "\"\($0)\"" }.joined(separator: ", ")).")
+            }
         }
         return parts.joined(separator: " ")
+    }
+
+    static func schema(for field: FormFieldSnapshot) -> [String: String] {
+        let label = Self.cleaned(field.accessibleLabel)
+            ?? Self.cleaned(field.title)
+            ?? Self.cleaned(field.description)
+            ?? Self.cleaned(field.placeholder)
+            ?? Self.cleaned(field.identifier)
+            ?? field.id
+        return [
+            "id": field.id,
+            "group": Self.cleaned(field.semanticGroup).map(Self.schemaComponent) ?? "current_form",
+            "name": Self.schemaComponent(label),
+            "description": Self.description(for: field),
+        ]
     }
 
     /// Values Smart Fill should write. Skips empties, low-confidence matches,
@@ -106,6 +135,15 @@ enum FieldContextBuilder {
         guard !trimmed.isEmpty else { return nil }
         return trimmed.ellipsized(limit: 160)
     }
+
+    private static func schemaComponent(_ value: String) -> String {
+        let folded = value.folding(
+            options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive],
+            locale: Locale(identifier: "en_US_POSIX"))
+        let words = folded.components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+        return words.joined(separator: "_")
+    }
 }
 
 @MainActor
@@ -128,6 +166,8 @@ enum SensitiveFieldDetector {
             return true
         }
         let haystack = ([
+            field.accessibleLabel,
+            field.semanticGroup,
             field.title,
             field.description,
             field.help,

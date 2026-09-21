@@ -6,6 +6,8 @@ import Testing
 private func field(
     id: String = "ax_1",
     role: String = "AXTextField",
+    accessibleLabel: String? = nil,
+    semanticGroup: String? = nil,
     title: String? = nil,
     placeholder: String? = nil,
     nearby: [String] = []) -> FormFieldSnapshot
@@ -13,6 +15,8 @@ private func field(
     FormFieldSnapshot(
         id: id,
         role: role,
+        accessibleLabel: accessibleLabel,
+        semanticGroup: semanticGroup,
         title: title,
         description: nil,
         help: nil,
@@ -28,7 +32,7 @@ private func field(
             title: "Work Email",
             placeholder: "name@company.com",
             nearby: ["Primary contact details"]))
-        #expect(description.contains("Label: \"Work Email\"."))
+        #expect(description.contains("form field labeled \"Work Email\"."))
         #expect(description.contains("Placeholder: \"name@company.com\"."))
         #expect(description.contains("Nearby text: \"Primary contact details\"."))
     }
@@ -39,7 +43,34 @@ private func field(
             field(id: "ax_4", title: "Business Email", placeholder: "name@company.com"),
         ]
         #expect(fields.map(\.id) == ["ax_1", "ax_4"])
-        #expect(FieldContextBuilder.description(for: fields[0]).contains("Label: \"First Name\"."))
+        #expect(FieldContextBuilder.description(for: fields[0]).contains("form field labeled \"First Name\"."))
+    }
+
+    @Test func accessibleLabelTakesPrecedenceOverGenericAXMetadata() {
+        let description = FieldContextBuilder.description(for: field(
+            accessibleLabel: "Current job title",
+            semanticGroup: "Employment history",
+            title: "text field",
+            placeholder: "Role",
+            nearby: ["Unrelated nearby field"]))
+
+        #expect(description.hasPrefix(
+            "Employment history Current job title."))
+        #expect(!description.contains("text field"))
+        #expect(!description.contains("Unrelated nearby field"))
+        #expect(description.contains("Placeholder: \"Role\"."))
+    }
+
+    @Test func buildsSemanticSchemaNamesWithoutFormSpecificRules() {
+        let grouped = FieldContextBuilder.schema(for: field(
+            accessibleLabel: "Full Name",
+            semanticGroup: "Emergency contact"))
+        let ungrouped = FieldContextBuilder.schema(for: field(accessibleLabel: "Work E-mail"))
+
+        #expect(grouped["group"] == "emergency_contact")
+        #expect(grouped["name"] == "full_name")
+        #expect(ungrouped["group"] == "current_form")
+        #expect(ungrouped["name"] == "work_e_mail")
     }
 
     @Test func fillsHighConfidenceEmptyFieldsAndSkipsTheRest() {
@@ -68,6 +99,7 @@ private func field(
     @Test func treatsPasswordAndPaymentFieldsAsSensitive() {
         #expect(SensitiveFieldDetector.isSensitive(field(role: "AXSecureTextField", title: "User")))
         #expect(SensitiveFieldDetector.isSensitive(field(title: "Password")))
+        #expect(SensitiveFieldDetector.isSensitive(field(accessibleLabel: "Password")))
         #expect(SensitiveFieldDetector.isSensitive(field(title: "Credit card number")))
         #expect(SensitiveFieldDetector.isSensitive(field(placeholder: "CVV")))
         #expect(SensitiveFieldDetector.isSensitive(field(title: "Social Security Number")))

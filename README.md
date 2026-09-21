@@ -248,6 +248,25 @@ The project uses Swift Testing (`@Suite`, `@Test`, and `#expect`):
 swift test
 ```
 
+With the local Smart Fill model installed, the browser examples can also be
+run as an end-to-end extraction suite:
+
+```sh
+~/Library/Application\ Support/Marky/gliner/venv/bin/python \
+  Scripts/test_smart_fill_examples.py
+```
+
+Pass one or more HTML filenames to run a smaller subset. The generated fixtures
+can be rebuilt after catalog changes with:
+
+```sh
+python3 Scripts/generate_smart_fill_examples.py
+```
+
+The 30 semantic HTML fixtures include 11 multi-step flows, mixed controls, and
+adversarial DOM cases covering opaque attributes, accessible naming variants,
+placeholder fallbacks, repeated groups, and dynamically revealed steps.
+
 The suite covers Markdown detection and conversion, pasteboard behavior,
 history persistence, privacy filters, OCR, and Smart Fill schema/response
 handling. Tests use private named pasteboards and temporary `UserDefaults`

@@ -89,9 +89,8 @@ actor GLiNERService {
         let payload: [String: Any] = [
             "op": "extract",
             "text": clipped,
-            "fields": fields.map {
-                ["id": $0.id, "description": FieldContextBuilder.description(for: $0)]
-            },
+            "minimumConfidence": FieldContextBuilder.minimumConfidence,
+            "fields": fields.map { FieldContextBuilder.schema(for: $0) },
         ]
         let response = try await self.send(payload, timeoutSeconds: 120)
         guard response.ok else {

@@ -64,8 +64,11 @@ final class SmartFillController: NSObject, ObservableObject, NSWindowDelegate {
             return
         }
 
-        let snapshots = scan.fields.map(\.snapshot)
-        let elements = Dictionary(uniqueKeysWithValues: scan.fields.map { ($0.snapshot.id, $0.element) })
+        // Sensitive controls never enter the extraction schema. Besides being
+        // safer, this prevents unrelated secure fields from changing decoding.
+        let fillableFields = scan.fields.filter { !SensitiveFieldDetector.isSensitive($0.snapshot) }
+        let snapshots = fillableFields.map(\.snapshot)
+        let elements = Dictionary(uniqueKeysWithValues: fillableFields.map { ($0.snapshot.id, $0.element) })
         self.showPanel()
         self.phase = .working("Filling form…")
 
