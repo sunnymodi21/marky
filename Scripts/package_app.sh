@@ -5,6 +5,8 @@
 #
 # "mas" builds a sandboxed Mac App Store package (no Sparkle) at dist/Marky.pkg.
 # "upload" (or MARKY_MAS_UPLOAD=1) sends that pkg to App Store Connect via Transporter.
+# MAS upload requires APPSTORE_API_KEY and APPSTORE_ISSUER_ID from the environment
+# or the gitignored .env (no hardcoded defaults).
 #
 # "notarize" (or MARKY_NOTARIZE=1) additionally notarizes and staples the app and
 # leaves a distributable zip in dist/. Requires a Developer ID Application identity
