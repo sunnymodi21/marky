@@ -10,7 +10,10 @@ private func field(
     semanticGroup: String? = nil,
     title: String? = nil,
     placeholder: String? = nil,
-    nearby: [String] = []) -> FormFieldSnapshot
+    nearby: [String] = [],
+    caption: String? = nil,
+    part: FieldPart? = nil,
+    width: Double? = nil) -> FormFieldSnapshot
 {
     FormFieldSnapshot(
         id: id,
@@ -22,7 +25,10 @@ private func field(
         help: nil,
         placeholder: placeholder,
         nearbyText: nearby,
-        identifier: nil)
+        identifier: nil,
+        caption: caption,
+        part: part,
+        width: width)
 }
 
 @Suite struct FieldContextBuilderTests {
@@ -73,6 +79,70 @@ private func field(
         #expect(ungrouped["name"] == "work_e_mail")
     }
 
+    @Test func captionLabelsFieldsWithoutAnAccessibleName() {
+        // RoboForm-style column: plain-text captions above unnamed inputs.
+        let column = ["First Name", "Address 1", "City", "Company Name"]
+        let fields = column.enumerated().map { index, caption in
+            field(id: "ax_\(index + 1)", nearby: column, caption: caption)
+        }
+        let schemas = fields.map(FieldContextBuilder.schema(for:))
+
+        #expect(schemas.map { $0["name"] } == ["first_name", "address_1", "city", "company_name"])
+        #expect(schemas[0]["description"] == "Value for the form field labeled \"First Name\".")
+        #expect(schemas.allSatisfy { !$0["description"]!.contains("Nearby text") })
+    }
+
+    @Test func splitBoxesExtractOnceAndFillEachChunk() {
+        let fields = [
+            field(id: "ax_1", caption: "Home Phone Number", part: .init(leadID: "ax_1", index: 0, count: 3)),
+            field(id: "ax_2", caption: "Home Phone Number", part: .init(leadID: "ax_1", index: 1, count: 3)),
+            field(id: "ax_3", caption: "Home Phone Number", part: .init(leadID: "ax_1", index: 2, count: 3)),
+            field(id: "ax_4", caption: "Postal Code"),
+        ]
+        #expect(FieldContextBuilder.extractionFields(fields).map(\.id) == ["ax_1", "ax_4"])
+
+        let filled = Dictionary(uniqueKeysWithValues: FieldContextBuilder.assignments(fields: fields, extracted: [
+            .init(fieldID: "ax_1", value: "+1 (721) 536-3224", confidence: 0.9),
+            .init(fieldID: "ax_4", value: "94105", confidence: 0.9),
+        ]))
+        #expect(filled == ["ax_1": "721", "ax_2": "536", "ax_3": "3224", "ax_4": "94105"])
+    }
+
+    @Test func splitBoxesStayEmptyWhenTheValueDoesNotFitTheLayout() {
+        let fields = (0..<3).map { index in
+            field(id: "ax_\(index + 1)", caption: "Phone", part: .init(leadID: "ax_1", index: index, count: 3))
+        }
+        let filled = FieldContextBuilder.assignments(fields: fields, extracted: [
+            .init(fieldID: "ax_1", value: "536-3224", confidence: 0.9),
+        ])
+        #expect(filled.isEmpty)
+    }
+
+    @Test func splitsFollowTheValueSeparatorsOrTheBoxWidths() {
+        let two: [Double?] = [nil, nil]
+        #expect(SplitFieldValue.split("94105-1234", widths: two) == ["94105", "1234"])
+        #expect(SplitFieldValue.split("03/2027", widths: two) == ["03", "2027"])
+        #expect(SplitFieldValue.split("Jennifer Woods", widths: two) == ["Jennifer", "Woods"])
+        #expect(SplitFieldValue.split("Mary Ann Smith", widths: two) == nil)
+        #expect(SplitFieldValue.split("+44 20 7946 0958", widths: [nil, nil, nil]) == ["20", "7946", "0958"])
+        // Unbroken run: 3/3/4 digits from box widths, no layout table.
+        #expect(SplitFieldValue.split("4155550142", widths: [31, 31, 38]) == ["415", "555", "0142"])
+        #expect(SplitFieldValue.split("4155550142", widths: [31, nil, 38]) == nil)
+    }
+
+    @Test func singleLineFieldsNeverReceiveLineBreaks() {
+        let fields = [
+            field(id: "ax_1", caption: "Address 1"),
+            field(id: "ax_2", role: "AXTextArea", caption: "Notes"),
+        ]
+        let filled = Dictionary(uniqueKeysWithValues: FieldContextBuilder.assignments(fields: fields, extracted: [
+            .init(fieldID: "ax_1", value: "1450 Market Street\nSuite 300", confidence: 0.99),
+            .init(fieldID: "ax_2", value: "Leave at door\nRing twice", confidence: 0.99),
+        ]))
+        #expect(filled["ax_1"] == "1450 Market Street, Suite 300")
+        #expect(filled["ax_2"] == "Leave at door\nRing twice")
+    }
+
     @Test func fillsHighConfidenceEmptyFieldsAndSkipsTheRest() {
         let fields = [
             field(id: "ax_1", title: "First Name"),
@@ -105,6 +175,13 @@ private func field(
         #expect(SensitiveFieldDetector.isSensitive(field(title: "Social Security Number")))
         #expect(!SensitiveFieldDetector.isSensitive(field(title: "Work Email")))
         #expect(!SensitiveFieldDetector.isSensitive(field(title: "Account name")))
+    }
+
+    @Test func captionReplacesSiblingTextForSensitivity() {
+        let siblings = ["Enter your Email Address", "Choose A Password", "Hint (Optional)"]
+        #expect(!SensitiveFieldDetector.isSensitive(field(nearby: siblings, caption: "Enter your Email Address")))
+        #expect(SensitiveFieldDetector.isSensitive(field(nearby: siblings)))
+        #expect(SensitiveFieldDetector.isSensitive(field(caption: "Credit Card Number")))
     }
 }
 

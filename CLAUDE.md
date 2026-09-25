@@ -143,7 +143,8 @@ selected row scrolled into view.
 
 ```sh
 swift build                       # debug build
-swift test                        # 58 tests, 7 suites (Swift Testing, @Test/#expect)
+swift test                        # 81 tests, 13 suites (Swift Testing, @Test/#expect)
+MARKY_GLINER_TESTS=1 swift test --filter SmartFillModelFixtureTests  # opt-in: fixture pages through the installed GLiNER model
 ./Scripts/package_app.sh release [notarize]  # SPM binary -> Marky.app (stable-signed, copies *.bundle + Sparkle.framework); notarize also staples + emits dist/Marky-<ver>.zip
 ./Scripts/generate_appcast.sh     # Sparkle appcast from dist/Marky-*.dmg|zip → dist/updates/appcast.xml
 ./Scripts/compile_and_run.sh      # kill, build, test, package debug, relaunch
@@ -169,6 +170,8 @@ so the grant sticks. After changing the signing identity, run
 - Settings tests use throwaway `UserDefaults(suiteName:)` so `.standard` is untouched.
 - Never call anything that synthesizes events or captures the screen from tests.
 - OCR tests render text into an `NSImage` and verify Vision reads it back.
+- Smart Fill scanner tests parse HTML fixtures (`Tests/MarkyTests/Fixtures/SmartFill`) into a
+  Chrome-like AX tree (`ChromeLikeTree`) and run the real `FormTreeScanner` over it; no live AX.
 
 ## Dependencies (keep minimal)
 

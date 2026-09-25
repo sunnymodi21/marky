@@ -46,5 +46,6 @@ let package = Package(
             ]),
         .testTarget(
             name: "MarkyTests",
-            dependencies: ["Marky", "MarkyCore"]),
+            dependencies: ["Marky", "MarkyCore"],
+            resources: [.copy("Fixtures")]),
     ])

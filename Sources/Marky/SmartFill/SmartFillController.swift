@@ -78,7 +78,10 @@ final class SmartFillController: NSObject, ObservableObject, NSWindowDelegate {
         self.work = Task { [weak self] in
             guard let self else { return }
             do {
-                let extracted = try await gliner.extract(text: clipboard, fields: snapshots) { message in
+                let extracted = try await gliner.extract(
+                    text: clipboard,
+                    fields: FieldContextBuilder.extractionFields(snapshots))
+                { message in
                     Task { @MainActor [weak self] in
                         guard self?.workID == workID else { return }
                         self?.phase = .working(message)

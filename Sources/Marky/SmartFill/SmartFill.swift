@@ -3,7 +3,7 @@ import Foundation
 
 struct FormField {
     let element: AXUIElement
-    let snapshot: FormFieldSnapshot
+    var snapshot: FormFieldSnapshot
 }
 
 struct FormFieldSnapshot: Sendable, Equatable {
@@ -17,6 +17,20 @@ struct FormFieldSnapshot: Sendable, Equatable {
     var placeholder: String?
     var nearbyText: [String]
     var identifier: String?
+    /// Text preceding the field in document order, for pages whose captions
+    /// are plain text with no programmatic link to the control.
+    var caption: String? = nil
+    /// Set when several boxes share one caption (e.g. a split phone number).
+    var part: FieldPart? = nil
+    /// On-screen width, used to apportion an unbroken value across parts.
+    var width: Double? = nil
+}
+
+struct FieldPart: Sendable, Equatable {
+    /// The first box; only it is sent for extraction.
+    var leadID: String
+    var index: Int
+    var count: Int
 }
 
 struct ExtractedFieldValue: Codable, Sendable, Equatable {
@@ -66,7 +80,8 @@ enum FieldContextBuilder {
         let semanticGroup = Self.cleaned(field.semanticGroup)
         let title = Self.cleaned(field.title)
         let fieldDescription = Self.cleaned(field.description)
-        let label = accessibleLabel ?? title ?? fieldDescription
+        let caption = Self.cleaned(field.caption)
+        let label = accessibleLabel ?? title ?? fieldDescription ?? caption
 
         if let semanticGroup, let label {
             parts.append("\(semanticGroup) \(label).")
@@ -87,7 +102,9 @@ enum FieldContextBuilder {
         if let placeholder = Self.cleaned(field.placeholder) {
             parts.append("Placeholder: \"\(placeholder)\".")
         }
-        if accessibleLabel == nil {
+        // Sibling text is a last resort: in a column of captioned boxes it
+        // lists every caption, making all the fields look alike.
+        if accessibleLabel == nil, caption == nil {
             let nearby = field.nearbyText.compactMap(Self.cleaned)
             if !nearby.isEmpty {
                 parts.append("Nearby text: \(nearby.map { "\"\($0)\"" }.joined(separator: ", ")).")
@@ -100,6 +117,7 @@ enum FieldContextBuilder {
         let label = Self.cleaned(field.accessibleLabel)
             ?? Self.cleaned(field.title)
             ?? Self.cleaned(field.description)
+            ?? Self.cleaned(field.caption)
             ?? Self.cleaned(field.placeholder)
             ?? Self.cleaned(field.identifier)
             ?? field.id
@@ -111,22 +129,47 @@ enum FieldContextBuilder {
         ]
     }
 
+    /// Fields to send to the extractor: split boxes are represented by their
+    /// first part, which carries the shared caption.
+    static func extractionFields(_ fields: [FormFieldSnapshot]) -> [FormFieldSnapshot] {
+        fields.filter { ($0.part?.index ?? 0) == 0 }
+    }
+
     /// Values Smart Fill should write. Skips empties, low-confidence matches,
-    /// and sensitive fields.
+    /// and sensitive fields. Split boxes get their chunk of the lead's value.
     static func assignments(
         fields: [FormFieldSnapshot],
         extracted: [ExtractedFieldValue]) -> [(fieldID: String, value: String)]
     {
         let values = Dictionary(extracted.map { ($0.fieldID, $0) }, uniquingKeysWith: { _, latest in latest })
+        let partWidths = Dictionary(grouping: fields.filter { $0.part != nil }) { $0.part!.leadID }
+            .mapValues { parts in parts.sorted { $0.part!.index < $1.part!.index }.map(\.width) }
         return fields.compactMap { field in
-            guard let extracted = values[field.id] else { return nil }
-            let value = extracted.value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let extracted = values[field.part?.leadID ?? field.id] else { return nil }
+            var value = extracted.value.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !value.isEmpty,
                   extracted.confidence >= Self.minimumConfidence,
                   !SensitiveFieldDetector.isSensitive(field)
             else { return nil }
+            if let part = field.part {
+                guard let widths = partWidths[part.leadID],
+                      let chunks = SplitFieldValue.split(value, widths: widths)
+                else { return nil }
+                value = chunks[part.index]
+            } else if field.role != "AXTextArea" {
+                value = Self.singleLine(value)
+            }
             return (field.id, value)
         }
+    }
+
+    /// Single-line controls drop or mangle line breaks, so a multi-line
+    /// extraction (e.g. a street address with a suite line) is joined.
+    static func singleLine(_ value: String) -> String {
+        value.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .joined(separator: ", ")
     }
 
     private static func cleaned(_ value: String?) -> String? {
@@ -143,6 +186,52 @@ enum FieldContextBuilder {
         let words = folded.components(separatedBy: CharacterSet.alphanumerics.inverted)
             .filter { !$0.isEmpty }
         return words.joined(separator: "_")
+    }
+}
+
+/// Splits one value across boxes that share a caption. Values that don't
+/// map cleanly onto the boxes are left unfilled rather than pasting the
+/// whole value into each one.
+enum SplitFieldValue {
+    static func split(_ value: String, widths: [Double?]) -> [String]? {
+        let count = widths.count
+        guard count > 1 else { return nil }
+        var tokens = value.components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+        // An international prefix ("+1", "+44") is not part of a local layout.
+        if tokens.count == count + 1, value.hasPrefix("+") {
+            tokens.removeFirst()
+        }
+        // The value's own separators line up with the boxes: "(415) 555-0142",
+        // "94105-1234", "03/2027", "Jennifer Woods".
+        if tokens.count == count { return tokens }
+        // One unbroken run ("4155550142"): apportion by relative box width.
+        guard tokens.count == 1,
+              let run = tokens.first,
+              run.count >= count,
+              let lengths = Self.lengths(total: run.count, widths: widths)
+        else { return nil }
+        var rest = Substring(run)
+        return lengths.map { length in
+            defer { rest = rest.dropFirst(length) }
+            return String(rest.prefix(length))
+        }
+    }
+
+    /// Largest-remainder apportionment; every box gets at least one character.
+    private static func lengths(total: Int, widths: [Double?]) -> [Int]? {
+        let known = widths.compactMap { $0 }.filter { $0 > 0 }
+        guard known.count == widths.count else { return nil }
+        let sum = known.reduce(0, +)
+        let exact = known.map { Double(total) * $0 / sum }
+        var lengths = exact.map { max(1, Int($0)) }
+        var remaining = total - lengths.reduce(0, +)
+        let byRemainder = exact.indices.sorted { exact[$0] - exact[$0].rounded(.down) > exact[$1] - exact[$1].rounded(.down) }
+        for index in byRemainder where remaining > 0 {
+            lengths[index] += 1
+            remaining -= 1
+        }
+        return remaining == 0 ? lengths : nil
     }
 }
 
@@ -165,6 +254,8 @@ enum SensitiveFieldDetector {
         if field.role == "AXSecureTextField" {
             return true
         }
+        // A caption pins down which text belongs to this field, so sibling
+        // text (e.g. the next field's "Password" caption) no longer applies.
         let haystack = ([
             field.accessibleLabel,
             field.semanticGroup,
@@ -173,7 +264,8 @@ enum SensitiveFieldDetector {
             field.help,
             field.placeholder,
             field.identifier,
-        ] + field.nearbyText)
+            field.caption,
+        ] + (field.caption == nil ? field.nearbyText : []))
             .compactMap { $0?.lowercased() }
             .joined(separator: " ")
         let needles = [
